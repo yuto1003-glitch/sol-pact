@@ -1,0 +1,1980 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOL-PACT | 背水の陣デポジット契約 (Solana Devnet)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@solana/web3.js@1.98.0/lib/index.iife.min.js"></script>
+<script>
+/* ブラウザ用 Buffer ポリフィル（追加の CDN 依存なし）
+   web3.js の IIFE 版は Buffer 実装（feross/buffer）を同梱しているが、bigint の LE 変換などが
+   グローバル Buffer を参照する。ブラウザにはグローバル Buffer が無いため、同梱クラスを公開する。 */
+(function () {
+  if (typeof globalThis.Buffer !== 'undefined' || !window.solanaWeb3) return;
+  try {
+    var B = new window.solanaWeb3.PublicKey(new Uint8Array(32)).toBuffer().constructor;
+    if (typeof B.from === 'function' && typeof B.alloc === 'function' && typeof B.isBuffer === 'function') {
+      globalThis.Buffer = B;
+    } else {
+      console.warn('[SOL-PACT] 同梱 Buffer が見つからないため、ポリフィルを適用しませんでした');
+    }
+  } catch (e) {
+    console.warn('[SOL-PACT] Buffer ポリフィルの適用に失敗しました', e);
+  }
+})();
+</script>
+<style>
+:root{
+  --bg:#06070c; --panel:#0f121b; --panel2:#141826; --line:#232a3d; --text:#e7eaf3; --muted:#8a93a8;
+  --sol1:#9945FF; --sol2:#14F195; --danger:#ff3355; --warn:#ffb020; --gold:#ffd54a; --info:#4fc3ff;
+  --radius:14px;
+  --mono:'Orbitron',ui-monospace,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(153,69,255,.18), transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, rgba(20,241,149,.10), transparent 60%),
+    var(--bg);
+  color:var(--text); font-family:'Noto Sans JP',system-ui,sans-serif; min-height:100vh; line-height:1.6;
+}
+body::before{ /* scanlines */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:1;
+  background:repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 1px, transparent 1px 3px);
+}
+a{color:var(--info)}
+button{font-family:inherit}
+.wrap{max-width:1200px; margin:0 auto; padding:0 18px 60px; position:relative; z-index:2}
+
+/* ---------- Top bar ---------- */
+.netbar{
+  position:sticky; top:0; z-index:50; display:flex; align-items:center; justify-content:center; gap:10px;
+  background:linear-gradient(90deg,#3b0a6b,#0b5a45); font-weight:700; font-size:13px; letter-spacing:.08em; padding:6px 10px;
+  border-bottom:1px solid rgba(255,255,255,.15);
+}
+.netbar .dot{width:9px;height:9px;border-radius:50%;background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.netbar.ok .dot{background:var(--sol2);box-shadow:0 0 10px var(--sol2)}
+.netbar.ng .dot{background:var(--danger);box-shadow:0 0 10px var(--danger)}
+header{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; padding:22px 0 12px}
+.logo{display:flex; align-items:center; gap:12px}
+.logo .mark{
+  width:46px;height:46px;border-radius:12px;display:grid;place-items:center;font-size:24px;
+  background:linear-gradient(135deg,var(--sol1),var(--sol2)); box-shadow:0 0 24px rgba(153,69,255,.5);
+}
+.logo h1{margin:0;font-family:var(--mono);font-weight:900;font-size:26px;letter-spacing:.06em;
+  background:linear-gradient(90deg,#c9a7ff,var(--sol2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.logo small{display:block;color:var(--muted);font-size:12px;letter-spacing:.05em}
+
+.wallet{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;display:flex;align-items:center;gap:8px}
+.chip b{font-family:var(--mono);font-size:13px}
+
+/* ---------- Buttons ---------- */
+.btn{
+  border:1px solid var(--line); background:var(--panel2); color:var(--text); padding:9px 14px; border-radius:10px;
+  cursor:pointer; font-weight:700; font-size:14px; transition:transform .08s, box-shadow .2s, background .2s;
+}
+.btn:hover{border-color:#3a4566}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:linear-gradient(90deg,var(--sol1),#6b3dff);border-color:transparent;box-shadow:0 0 18px rgba(153,69,255,.35)}
+.btn.green{background:linear-gradient(90deg,#0fbf77,var(--sol2));color:#03140c;border-color:transparent;box-shadow:0 0 18px rgba(20,241,149,.35)}
+.btn.danger{background:linear-gradient(90deg,#c4102e,var(--danger));border-color:transparent}
+.btn.ghost{background:transparent}
+.btn.sm{padding:5px 10px;font-size:12px;border-radius:8px}
+.btn.huge{width:100%;padding:16px;font-size:18px;letter-spacing:.05em;border-radius:12px}
+
+/* ---------- Layout ---------- */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:920px){.grid{grid-template-columns:1fr}}
+.card{background:linear-gradient(180deg,var(--panel),#0c0f17);border:1px solid var(--line);border-radius:var(--radius);padding:18px;position:relative;overflow:hidden}
+.card h2{margin:0 0 12px;font-size:16px;display:flex;align-items:center;gap:8px;letter-spacing:.04em}
+.card h2 .tag{font-family:var(--mono);font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:auto}
+.stack{display:flex;flex-direction:column;gap:18px}
+label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:700;letter-spacing:.04em}
+input,select,textarea{
+  width:100%;background:#0a0d15;border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--sol1);box-shadow:0 0 0 3px rgba(153,69,255,.2)}
+.row{display:flex;gap:10px}
+.row>*{flex:1}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+.flash{animation:flashField 1.2s ease}
+@keyframes flashField{0%{box-shadow:0 0 0 3px rgba(20,241,149,.8);border-color:var(--sol2)}100%{box-shadow:none}}
+
+.presets{display:flex;gap:8px;flex-wrap:wrap}
+.preset{flex:1;min-width:84px;padding:10px 6px;border-radius:10px;border:1px solid var(--line);background:#0a0d15;color:var(--text);cursor:pointer;text-align:center;font-weight:700}
+.preset small{display:block;font-size:10px;color:var(--muted);font-weight:400}
+.preset.active{border-color:var(--sol2);background:rgba(20,241,149,.08);box-shadow:0 0 12px rgba(20,241,149,.25)}
+.preset.demo small{color:var(--warn)}
+
+/* ---------- AI ---------- */
+.ai-log{background:#090b12;border:1px solid var(--line);border-radius:12px;padding:12px;min-height:90px;font-size:13.5px;margin-top:12px}
+.ai-msg{display:flex;gap:10px;align-items:flex-start}
+.ai-avatar{flex:0 0 32px;height:32px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#2a1757,#0d3b2d);border:1px solid #3a2a6b}
+.ai-text{white-space:pre-wrap}
+.ai-steps{margin:10px 0 0;padding:0;list-style:none;counter-reset:s}
+.ai-steps li{counter-increment:s;padding:8px 10px 8px 40px;position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:10px;margin-top:6px;animation:popIn .4s both}
+.ai-steps li::before{content:counter(s);position:absolute;left:10px;top:8px;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-family:var(--mono);font-size:12px;background:var(--sol1)}
+.ai-steps li em{display:block;font-style:normal;font-size:11px;color:var(--sol2)}
+@keyframes popIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.dots::after{content:"";animation:dots 1s steps(4) infinite}
+@keyframes dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+.example-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.example-chips button{background:#0a0d15;border:1px dashed var(--line);color:var(--muted);border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer}
+.example-chips button:hover{color:var(--text);border-color:var(--sol1)}
+
+/* ---------- Tx progress ---------- */
+.txp{display:none}
+.txp.show{display:block;animation:popIn .3s}
+.txsteps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.txsteps li{text-align:center;font-size:11px;color:var(--muted);padding:10px 4px;border-radius:10px;background:#0a0d15;border:1px solid var(--line);position:relative}
+.txsteps li .ic{display:block;font-size:18px;margin-bottom:2px}
+.txsteps li.active{color:var(--text);border-color:var(--info);box-shadow:0 0 12px rgba(79,195,255,.3)}
+.txsteps li.active .ic{animation:spin 1s linear infinite;display:inline-block}
+.txsteps li.done{color:var(--sol2);border-color:rgba(20,241,149,.5)}
+.txsteps li.fail{color:var(--danger);border-color:var(--danger)}
+.txsteps li.warn{color:var(--warn);border-color:var(--warn)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.txmeta{margin-top:10px;font-size:12px;color:var(--muted);word-break:break-all}
+.txmeta code{color:var(--text)}
+
+/* ---------- Arena ---------- */
+.arena{text-align:center}
+.arena .idle{padding:30px 10px;color:var(--muted)}
+.arena .idle .big{font-size:54px;filter:grayscale(.3)}
+.ring-wrap{position:relative;width:min(300px,80vw);aspect-ratio:1;margin:6px auto 10px}
+.ring-wrap svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:#1a2032;stroke-width:10}
+.ring-fg{fill:none;stroke:url(#ringGrad);stroke-width:10;stroke-linecap:round;transition:stroke .3s}
+.ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.timer{font-family:var(--mono);font-weight:900;font-size:clamp(34px,7vw,52px);letter-spacing:.03em;text-shadow:0 0 18px rgba(20,241,149,.5)}
+.timer-sub{font-size:12px;color:var(--muted);letter-spacing:.1em}
+.mission-title{font-size:18px;font-weight:900;margin:0 0 4px}
+.stake{display:inline-flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);background:#0a0d15;border:1px solid var(--line);border-radius:999px;padding:4px 12px}
+.stake b{color:var(--gold);font-family:var(--mono)}
+.checklist{list-style:none;padding:0;margin:14px 0;text-align:left}
+.checklist li{display:flex;gap:10px;align-items:center;padding:9px 12px;background:#0a0d15;border:1px solid var(--line);border-radius:10px;margin-top:6px;cursor:pointer;user-select:none}
+.checklist li .box{flex:0 0 20px;height:20px;border-radius:6px;border:2px solid #3a4566;display:grid;place-items:center;font-size:13px}
+.checklist li.done{border-color:rgba(20,241,149,.5)}
+.checklist li.done .box{background:var(--sol2);border-color:var(--sol2);color:#03140c}
+.checklist li.done span{text-decoration:line-through;color:var(--muted)}
+.status-line{font-size:13px;font-weight:700;margin:6px 0 12px;letter-spacing:.05em}
+
+body.warning .timer{color:var(--warn);text-shadow:0 0 18px rgba(255,176,32,.6)}
+body.warning .ring-fg{stroke:var(--warn)}
+body.critical .timer{color:var(--danger);text-shadow:0 0 22px rgba(255,51,85,.9);animation:shake .25s infinite}
+body.critical .ring-fg{stroke:var(--danger)}
+body.critical .arena-card{border-color:var(--danger);animation:borderPulse .8s infinite}
+body.critical .status-line{color:var(--danger)}
+@keyframes shake{0%,100%{transform:translate(0)}25%{transform:translate(-1px,1px)}50%{transform:translate(1px,-1px)}75%{transform:translate(-1px,-1px)}}
+@keyframes borderPulse{50%{box-shadow:0 0 34px rgba(255,51,85,.6)}}
+#vignette{position:fixed;inset:0;pointer-events:none;z-index:40;opacity:0;
+  background:radial-gradient(ellipse at center, transparent 45%, rgba(255,0,40,.55) 100%)}
+body.critical #vignette{animation:redFlash .9s infinite}
+body.warning #vignette{opacity:.25;background:radial-gradient(ellipse at center, transparent 55%, rgba(255,140,0,.45) 100%)}
+@keyframes redFlash{0%,100%{opacity:.15}50%{opacity:1}}
+
+/* ---------- Overlays ---------- */
+.overlay{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(3,4,8,.82);backdrop-filter:blur(4px)}
+.overlay.show{display:flex}
+.modal{max-width:560px;width:100%;border-radius:18px;padding:26px;text-align:center;position:relative;animation:zoomIn .5s cubic-bezier(.2,1.4,.4,1)}
+@keyframes zoomIn{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+.victory{background:linear-gradient(180deg,#1b1606,#0d0f17 60%);border:2px solid var(--gold);box-shadow:0 0 60px rgba(255,213,74,.35)}
+.trophy{font-size:84px;display:inline-block;animation:trophy 1.6s ease-in-out infinite;filter:drop-shadow(0 0 22px rgba(255,213,74,.8))}
+@keyframes trophy{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-10px) rotate(4deg)}}
+.v-head{font-family:var(--mono);font-weight:900;font-size:30px;color:var(--gold);letter-spacing:.08em;margin:4px 0}
+.cert{margin-top:14px;text-align:left;background:#0a0b10;border:1px solid #4a3f17;border-radius:12px;padding:14px 16px;font-size:13px}
+.cert .ttl{text-align:center;font-family:var(--mono);color:var(--gold);letter-spacing:.2em;font-size:11px;margin-bottom:8px}
+.cert dl{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;margin:0}
+.cert dt{color:var(--muted)}
+.cert dd{margin:0;word-break:break-all}
+.rank{font-weight:900;color:var(--gold);font-size:15px}
+.defeat{background:linear-gradient(180deg,#240409,#0d0f17 65%);border:2px solid var(--danger);box-shadow:0 0 70px rgba(255,51,85,.45)}
+.d-head{font-family:var(--mono);font-weight:900;font-size:clamp(40px,10vw,64px);color:var(--danger);letter-spacing:.06em;position:relative;animation:glitch 1.2s infinite}
+@keyframes glitch{
+  0%,100%{text-shadow:2px 0 #00e5ff,-2px 0 #ff00aa;transform:none}
+  20%{text-shadow:-3px 0 #00e5ff,3px 0 #ff00aa;transform:skewX(-6deg)}
+  21%{transform:none}
+  60%{text-shadow:3px 1px #00e5ff,-3px -1px #ff00aa}
+  61%{transform:translateX(3px)}
+  62%{transform:none}
+}
+.skull{font-size:70px;animation:shake .3s infinite}
+.modal .actions{display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap}
+#confetti{position:fixed;inset:0;pointer-events:none;z-index:120}
+
+/* ---------- History ---------- */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{color:var(--muted);font-size:11px;letter-spacing:.08em;font-weight:700}
+td.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:900}
+.badge.ok{background:rgba(20,241,149,.12);color:var(--sol2);border:1px solid rgba(20,241,149,.4)}
+.badge.ng{background:rgba(255,51,85,.12);color:var(--danger);border:1px solid rgba(255,51,85,.4)}
+.links a{display:inline-block;margin-right:8px;font-size:12px;white-space:nowrap}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.stat{flex:1;min-width:120px;background:#0a0d15;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.stat .v{font-family:var(--mono);font-size:20px;font-weight:900}
+.stat .k{font-size:11px;color:var(--muted)}
+.empty{color:var(--muted);text-align:center;padding:24px}
+
+/* ---------- Misc ---------- */
+.banner{border:1px solid var(--warn);background:rgba(255,176,32,.08);color:#ffd28a;border-radius:12px;padding:10px 14px;font-size:13px;margin:10px 0;display:none}
+.banner.show{display:block}
+#toasts{position:fixed;right:16px;bottom:16px;z-index:200;display:flex;flex-direction:column;gap:8px;max-width:min(380px,90vw)}
+.toast{background:#151a28;border:1px solid var(--line);border-left:4px solid var(--info);padding:10px 14px;border-radius:10px;font-size:13px;animation:popIn .3s;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+.toast.error{border-left-color:var(--danger)}
+.toast.success{border-left-color:var(--sol2)}
+footer{color:var(--muted);font-size:12px;text-align:center;margin-top:28px}
+.txnote{font-size:12px;color:var(--info);margin-top:6px}
+.txerr{margin-top:12px;border:1px solid var(--danger);background:rgba(255,51,85,.08);border-radius:12px;padding:12px 14px;font-size:13px;animation:popIn .3s}
+.txerr-title{font-weight:900;color:var(--danger);font-size:15px;margin-bottom:4px}
+.txerr-hint{margin-top:6px;color:#ffd28a}
+.txerr summary{cursor:pointer;color:var(--muted);font-size:12px;margin-top:8px}
+.txerr pre{white-space:pre-wrap;word-break:break-all;font-size:11px;color:var(--muted);max-height:200px;overflow:auto;margin:6px 0 0;background:#0a0d15;border-radius:8px;padding:8px}
+.rpc-panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 14px;margin:0 0 14px;font-size:13px}
+.rpc-panel summary{cursor:pointer;font-weight:700}
+.rpc-table{min-width:640px;font-size:12px;margin-top:8px}
+.rpc-table td{padding:6px 8px}
+.rdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.mode-note{font-size:12px;color:var(--muted);background:#0a0d15;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-top:6px}
+</style>
+</head>
+<body>
+<div id="vignette"></div>
+<canvas id="confetti"></canvas>
+
+<div class="netbar" id="netbar">
+  <span class="dot"></span>
+  <span id="netText">NETWORK: SOLANA DEVNET（接続確認中…）</span>
+</div>
+
+<div class="wrap">
+  <header>
+    <div class="logo">
+      <div class="mark">⚔️</div>
+      <div>
+        <h1>SOL-PACT</h1>
+        <small>ソルパクト ─ 背水の陣デポジット契約で、サボりを断つ。</small>
+      </div>
+    </div>
+    <div class="wallet">
+      <div class="chip" id="addrChip" style="display:none">👛 <a id="addrLink" target="_blank" rel="noopener"><b id="addrText"></b></a></div>
+      <div class="chip" id="balChip" style="display:none">◎ <b id="balText">-</b> SOL <span style="color:var(--muted)">(Devnet)</span>
+        <button class="btn sm ghost" id="refreshBtn" title="残高更新">↻</button></div>
+      <button class="btn sm" id="airdropBtn" style="display:none" title="Devnetのテスト用SOLを受け取る">🚰 1 SOL Airdrop</button>
+      <button class="btn primary" id="connectBtn">ウォレット接続</button>
+    </div>
+  </header>
+
+  <div class="banner" id="fileBanner">⚠️ <b>file://</b> で開いているため、Phantom などのウォレットが注入されません。README の手順でローカルサーバー（例: <code>python -m http.server 8000</code>）から開いてください。</div>
+  <div class="banner" id="libBanner">⚠️ Solana web3.js の読み込みに失敗しました。インターネット接続を確認して再読み込みしてください。</div>
+  <div class="banner" id="phantomBanner">💡 Phantom をお使いの場合は「設定 → 開発者設定 → テストネットモード」を ON にし、<b>Solana Devnet</b> を選択してください（このアプリは常に Devnet RPC に送信します）。</div>
+
+  <details class="rpc-panel" id="rpcPanel">
+    <summary id="rpcSummary">🛰 RPC: 確認中…</summary>
+    <div class="table-wrap">
+      <table class="rpc-table">
+        <thead><tr><th>エンドポイント</th><th>URL</th><th>状態</th><th>応答</th><th>直近のエラー</th></tr></thead>
+        <tbody id="rpcList"></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="customRpc" placeholder="カスタム Devnet RPC URL（任意。例: API キー付きの Helius / QuickNode など）" spellcheck="false" autocomplete="off">
+      <button class="btn sm" id="customRpcBtn" style="flex:0 0 auto">保存して再接続</button>
+    </div>
+    <div class="hint">RPC が失敗・タイムアウト・応答遅延した場合、自動的に次の公開 Devnet RPC へ切り替えます。カスタム RPC は Devnet であることを確認してから最優先で使用します（URL はこのブラウザにのみ保存）。</div>
+  </details>
+
+  <div class="grid">
+    <!-- LEFT -->
+    <div class="stack">
+      <section class="card">
+        <h2>🤖 AI作戦参謀 <span class="tag">OFFLINE AI · NO API KEY</span></h2>
+        <label for="aiInput">やるべき課題・勉強内容</label>
+        <div class="row">
+          <input id="aiInput" placeholder="例: TOEIC単語100個 / 情報倫理のレポート2000字 提出" maxlength="120">
+          <button class="btn primary" id="aiBtn" style="flex:0 0 auto">AIに作戦を相談</button>
+        </div>
+        <div class="example-chips" id="exampleChips">
+          <button>TOEIC単語100個</button><button>レポート提出</button><button>線形代数の演習問題15問</button>
+          <button>教科書を40ページ読む</button><button>ゼミ発表スライド10枚</button><button>Pythonの課題を実装</button>
+        </div>
+        <div class="ai-log" id="aiLog">
+          <div class="ai-msg"><div class="ai-avatar">🤖</div>
+            <div class="ai-text" style="color:var(--muted)">課題を入力すると、3つのミニステップ・制限時間・デポジット額を提案して、下の契約フォームに自動反映します。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>📜 背水の陣デポジット契約 <span class="tag">DEVNET TX</span></h2>
+        <label for="pactTitle">課題タイトル</label>
+        <input id="pactTitle" placeholder="例: TOEIC単語100個" maxlength="80">
+
+        <div class="row">
+          <div>
+            <label for="pactAmount">賭けるSOL数量</label>
+            <input id="pactAmount" type="number" step="0.001" min="0.001" value="0.05">
+          </div>
+          <div>
+            <label for="pactMode">デポジット方式</label>
+            <select id="pactMode">
+              <option value="escrow" selected>契約金庫（達成で返金）</option>
+              <option value="direct">仲間へ直接送金</option>
+            </select>
+          </div>
+        </div>
+        <div class="mode-note" id="modeNote"></div>
+
+        <label for="pactWatcher">監視役（仲間）のウォレットアドレス</label>
+        <input id="pactWatcher" placeholder="仲間の Solana アドレス (Base58)" spellcheck="false" autocomplete="off">
+
+        <label>制限時間</label>
+        <div class="presets" id="presets">
+          <button class="preset demo active" data-ms="30000">30秒<small>デモ実演</small></button>
+          <button class="preset demo" data-ms="60000">1分<small>デモ実演</small></button>
+          <button class="preset" data-ms="1800000">30分<small>実用</small></button>
+          <button class="preset" data-ms="86400000">24時間<small>実用</small></button>
+        </div>
+        <div class="row" style="margin-top:8px;align-items:center">
+          <input id="customMin" type="number" min="1" max="10080" placeholder="カスタム（分）※AI提案もここに入ります">
+          <div class="hint" id="durationLabel" style="flex:0 0 auto;margin:0">設定: <b>30秒</b></div>
+        </div>
+
+        <label>ミニステップ（AI提案・編集可）</label>
+        <div id="stepInputs">
+          <input class="stepIn" placeholder="ステップ1" maxlength="80" style="margin-bottom:6px">
+          <input class="stepIn" placeholder="ステップ2" maxlength="80" style="margin-bottom:6px">
+          <input class="stepIn" placeholder="ステップ3" maxlength="80">
+        </div>
+
+        <div style="margin-top:16px">
+          <button class="btn danger huge" id="startBtn">🔥 SOLを賭けて契約開始</button>
+          <div class="hint" style="text-align:center">送金が <b>Finalized</b> になった瞬間にカウントダウンが始まります。</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="stack">
+      <section class="card txp" id="txPanel">
+        <h2>🛰 <span id="txTitle">トランザクション進行状況</span> <span class="tag">LIVE</span></h2>
+        <ul class="txsteps" id="txSteps">
+          <li data-k="build"><span class="ic">⬜</span>準備</li>
+          <li data-k="sign"><span class="ic">⬜</span>署名</li>
+          <li data-k="send"><span class="ic">⬜</span>送信</li>
+          <li data-k="confirm"><span class="ic">⬜</span>Confirmed</li>
+          <li data-k="final"><span class="ic">⬜</span>Finalized</li>
+        </ul>
+        <div class="txmeta" id="txMeta"></div>
+        <div class="txnote" id="txNote"></div>
+        <div class="txerr" id="txError" hidden>
+          <div class="txerr-title" id="txErrTitle"></div>
+          <div id="txErrReason"></div>
+          <div class="txerr-hint" id="txErrHint"></div>
+          <details><summary>技術的な詳細（RPC 応答・ログ）</summary><pre id="txErrRaw"></pre></details>
+        </div>
+      </section>
+
+      <section class="card arena arena-card" id="arena">
+        <h2>⏱ ミッション・アリーナ <span class="tag" id="arenaTag">STANDBY</span></h2>
+        <div id="arenaIdle" class="idle">
+          <div class="big">🛡️</div>
+          <div>まだ契約はありません。<br>SOLを賭けた瞬間、逃げ道は消えます。</div>
+        </div>
+        <div id="arenaLive" style="display:none">
+          <p class="mission-title" id="mTitle"></p>
+          <div class="stake">STAKE <b id="mStake"></b> → 監視役 <span id="mWatcher" style="font-family:ui-monospace,monospace"></span></div>
+          <div id="depositState" style="font-size:12px;font-weight:700;margin-top:6px"></div>
+          <div class="ring-wrap">
+            <svg viewBox="0 0 120 120">
+              <defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9945FF"/><stop offset="1" stop-color="#14F195"/></linearGradient></defs>
+              <circle class="ring-bg" cx="60" cy="60" r="52"/>
+              <circle class="ring-fg" id="ring" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="0"/>
+            </svg>
+            <div class="ring-center">
+              <div class="timer" id="timer">00:00.00</div>
+              <div class="timer-sub" id="timerSub">REMAINING</div>
+            </div>
+          </div>
+          <div class="status-line" id="statusLine">集中モード起動。今すぐ着手せよ。</div>
+          <ul class="checklist" id="checklist"></ul>
+          <button class="btn green huge" id="completeBtn">✅ ミッション完了！</button>
+          <div class="row" style="margin-top:8px">
+            <button class="btn sm ghost" id="soundBtn">🔊 効果音: ON</button>
+            <a class="btn sm ghost" id="depositLink" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">🔗 デポジットTx</a>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="card" style="margin-top:18px">
+    <h2>📚 オンチェーン契約履歴 <span class="tag">SOLANA EXPLORER · DEVNET</span></h2>
+    <div class="stats" id="stats"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>日時</th><th>課題名</th><th>仲間アドレス</th><th>SOL</th><th>結果</th><th>達成タイム / 称号</th><th>Solana Explorer</th></tr></thead>
+        <tbody id="histBody"></tbody>
+      </table>
+    </div>
+    <div style="text-align:right;margin-top:10px"><button class="btn sm ghost" id="clearHistBtn">履歴をクリア（ローカル表示のみ）</button></div>
+  </section>
+
+  <footer>
+    SOL-PACT は Solana <b>Devnet</b> 専用の学習用デモです。Devnet の SOL に金銭的価値はありません。<br>
+    契約金庫の秘密鍵はこのブラウザの localStorage に保存されるため、厳密なトラストレス・エスクローではありません。
+  </footer>
+</div>
+
+<!-- Victory -->
+<div class="overlay" id="victoryOverlay">
+  <div class="modal victory">
+    <div class="trophy">🏆</div>
+    <div class="v-head">MISSION COMPLETE</div>
+    <div style="color:var(--muted)">背水の陣を制した。賭け金は守られた。</div>
+    <div class="cert" id="certBody"></div>
+    <div class="actions">
+      <button class="btn" id="copyCertBtn">📋 証明書をコピー</button>
+      <button class="btn primary" data-close>閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- Defeat -->
+<div class="overlay" id="defeatOverlay">
+  <div class="modal defeat">
+    <div class="skull">💀</div>
+    <div class="d-head">TIME UP!</div>
+    <div style="font-size:18px;font-weight:900;margin:6px 0">仲間にSOLが没収されました</div>
+    <div class="cert" id="defeatBody" style="border-color:#5a1420"></div>
+    <div class="actions"><button class="btn danger" data-close>次こそは勝つ</button></div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+'use strict';
+/* =========================================================
+   SOL-PACT  ─  single-file dApp (Solana Devnet only)
+   ========================================================= */
+const W = window.solanaWeb3;
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const short = (a, n = 4) => a ? `${a.slice(0, n)}…${a.slice(-n)}` : '';
+const txUrl = (s) => `https://explorer.solana.com/tx/${s}?cluster=devnet`;
+const addrUrl = (a) => `https://explorer.solana.com/address/${a}?cluster=devnet`;
+
+const DEVNET_GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
+const FEE_LAMPORTS = 5000;          // 署名1つ分の基本手数料
+const MIN_DEPOSIT = 0.001;          // 新規アカウントの rent-exempt 最低額 (≈0.00089 SOL) を上回る値
+const LS_ACTIVE = 'solpact.active.v1';
+const LS_HIST = 'solpact.history.v1';
+const LS_PREF = 'solpact.pref.v1';
+
+if (location.protocol === 'file:') $('fileBanner').classList.add('show');
+if (!W) $('libBanner').classList.add('show');
+const LAMPORTS = W ? W.LAMPORTS_PER_SOL : 1e9;
+
+const state = {
+  provider: null, pubkey: null, balance: null,
+  durationMs: 30000, active: null, timerId: null, lastBeepSec: null,
+  busy: false, sound: true, listenersBound: false, networkOk: null,
+};
+
+/* ---------- Toast ---------- */
+function toast(msg, type = 'info', ms = 4200) {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = msg;
+  $('toasts').appendChild(el);
+  setTimeout(() => el.remove(), ms);
+}
+
+/* ---------- Storage ---------- */
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
+  del(k) { localStorage.removeItem(k); },
+};
+const getHistory = () => store.get(LS_HIST, []);
+const saveHistory = (h) => store.set(LS_HIST, h);
+function upsertHistory(entry) {
+  const h = getHistory();
+  const i = h.findIndex(x => x.id === entry.id);
+  if (i >= 0) h[i] = entry; else h.unshift(entry);
+  saveHistory(h); renderHistory();
+}
+
+/* ---------- Format ---------- */
+const p2 = (n) => String(n).padStart(2, '0');
+function fmtClock(ms, cs = true) {
+  ms = Math.max(0, ms);
+  const h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000),
+        s = Math.floor(ms % 60000 / 1000), c = Math.floor(ms % 1000 / 10);
+  return h > 0 ? `${p2(h)}:${p2(m)}:${p2(s)}` : `${p2(m)}:${p2(s)}${cs ? '.' + p2(c) : ''}`;
+}
+function fmtDur(ms) {
+  if (ms < 60000) return `${Math.round(ms / 1000)}秒`;
+  if (ms < 3600000) return `${Math.round(ms / 60000)}分`;
+  const h = Math.floor(ms / 3600000), m = Math.round(ms % 3600000 / 60000);
+  return m ? `${h}時間${m}分` : `${h}時間`;
+}
+const fmtDate = (t) => { const d = new Date(t); return `${d.getFullYear()}/${p2(d.getMonth()+1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+const solStr = (n) => (+n).toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+
+/* =========================================================
+   Devnet RPC プール（失敗・遅延時に別の公開 Devnet RPC へ自動フォールバック）
+   ========================================================= */
+// いずれも genesis hash・CORS・必要メソッド（getLatestBlockhash / getBlockHeight /
+// getSignatureStatuses / sendTransaction）が使えることを確認済みの公開 Devnet RPC
+const RPC_ENDPOINTS = [
+  { url: 'https://api.devnet.solana.com', name: 'Solana 公式', airdrop: true },
+  { url: 'https://devnet.rpcpool.com', name: 'Triton RPC Pool' },
+  { url: 'https://solana-devnet.gateway.tatum.io', name: 'Tatum Gateway' },
+  { url: 'https://solana-devnet.api.onfinality.io/public', name: 'OnFinality (低レート上限)' },
+];
+const RPC_CFG = {
+  FETCH_TIMEOUT_MS: 8000,   // 1 HTTP リクエストのタイムアウト（AbortController で切断）
+  CALL_TIMEOUT_MS: 9000,    // 1 ノードあたりの呼び出しタイムアウト → 超えたら次のノードへ
+  SEND_TIMEOUT_MS: 12000,   // 送信（プリフライト込み）のタイムアウト
+  SLOW_MS: 3500,            // これより遅い応答を「遅延」とみなす
+  SLOW_STREAK: 2,           // 連続でこの回数遅延したら、そのノードを後回しにする
+  COOLDOWN_MS: 30000,       // 失敗/遅延したノードを後回しにする時間
+};
+
+function withTimeout(promise, ms, msg) {
+  let t;
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => { t = setTimeout(() => rej(Object.assign(new Error(msg), { timeout: true })), ms); }),
+  ]).finally(() => clearTimeout(t));
+}
+/* エラーメッセージ＋シミュレーションログを1つの文字列に */
+const errText = (e) => [e?.message || String(e ?? ''), ...(e?.transactionLogs || e?.logs || [])].join(' ');
+function shortErr(e) {
+  const m = errText(e);
+  if (/429|too many/i.test(m)) return '429 レート制限';
+  if (e?.timeout || /abort|timed? ?out/i.test(m)) return 'タイムアウト';
+  if (/failed to fetch|fetch failed|networkerror|load failed/i.test(m)) return '接続不可';
+  if (/blockhash not found/i.test(m)) return 'Blockhash not found';
+  if (/50[234]/.test(m)) return 'サーバーエラー (5xx)';
+  return m.slice(0, 80);
+}
+
+function makeConnection(url) {
+  return new W.Connection(url, {
+    commitment: 'confirmed',
+    disableRetryOnRateLimit: true,   // 429 で内部リトライして固まらないようにし、別ノードへ切り替える
+    fetch: (input, init) => {
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), RPC_CFG.FETCH_TIMEOUT_MS);
+      return fetch(input, { ...init, signal: ac.signal }).finally(() => clearTimeout(t));
+    },
+  });
+}
+
+const rpcPool = {
+  nodes: [],
+  active: null,
+  init() {
+    const custom = store.get(LS_PREF, {}).customRpc;
+    const list = custom
+      ? [{ url: custom, name: 'カスタム RPC', custom: true }, ...RPC_ENDPOINTS.filter(x => x.url !== custom)]
+      : RPC_ENDPOINTS;
+    this.nodes = list.map(ep => ({ ...ep, conn: makeConnection(ep.url), genesis: null, fails: 0, slowStreak: 0, cooldownUntil: 0, latency: null, lastError: null }));
+    this.active = this.nodes[0];
+  },
+  usable() { return this.nodes.filter(n => n.genesis !== 'mismatch'); },
+  /* 試行順: 現在のノード → 健全なノード（リスト順）→ クールダウン中のノード（復帰が近い順） */
+  ordered() {
+    const now = Date.now();
+    const ok = this.usable().filter(n => n.cooldownUntil <= now);
+    const cooling = this.usable().filter(n => n.cooldownUntil > now).sort((a, b) => a.cooldownUntil - b.cooldownUntil);
+    const head = ok.includes(this.active) ? [this.active] : [];
+    return [...head, ...ok.filter(n => n !== this.active), ...cooling];
+  },
+  markOk(n, ms) {
+    n.fails = 0; n.latency = Math.round(ms);
+    if (ms > RPC_CFG.SLOW_MS) {
+      if (++n.slowStreak >= RPC_CFG.SLOW_STREAK) {
+        n.slowStreak = 0; n.cooldownUntil = Date.now() + RPC_CFG.COOLDOWN_MS; n.lastError = `応答遅延 (${n.latency}ms)`;
+      }
+    } else { n.slowStreak = 0; n.lastError = null; }
+    renderRpcStatus();
+  },
+  markFail(n, e) {
+    n.fails++; n.cooldownUntil = Date.now() + RPC_CFG.COOLDOWN_MS; n.lastError = shortErr(e);
+    renderRpcStatus();
+  },
+  switchTo(n) {
+    if (this.active === n) return;
+    const prev = this.active; this.active = n;
+    toast(`🛰 RPC を <b>${esc(n.name)}</b> に切り替えました（${esc(prev?.name)}: ${esc(prev?.lastError || '応答なし')}）`, 'info', 6000);
+    renderRpcStatus();
+  },
+  /**
+   * fn(conn) を健全なノードから順に試す。失敗・タイムアウトしたら次のノードへフォールバック。
+   * fatal(e) が true のエラー（残高不足などノードの責任ではないもの）は他ノードに回さず即座に投げる。
+   */
+  async call(label, fn, { timeoutMs = RPC_CFG.CALL_TIMEOUT_MS, fatal = (e) => !!e?.definitive, nodes = null, withNode = false } = {}) {
+    const attempts = [];
+    for (const n of nodes || this.ordered()) {
+      const t0 = performance.now();
+      try {
+        const value = await withTimeout(fn(n.conn, n), timeoutMs, `${label}: ${timeoutMs / 1000}秒以内に応答がありません`);
+        this.markOk(n, performance.now() - t0);
+        if (n !== this.active && (attempts.length || this.active.cooldownUntil > Date.now())) this.switchTo(n);
+        return withNode ? { value, node: n } : value;
+      } catch (e) {
+        if (fatal(e)) { e.rpcNode = n.name; throw e; }
+        this.markFail(n, e);
+        attempts.push({ node: n.name, msg: shortErr(e), raw: errText(e).slice(0, 400) });
+      }
+    }
+    const err = new Error(`${label}: すべての Devnet RPC が失敗しました`);
+    err.rpcUnavailable = true;
+    err.attempts = attempts;
+    err.rateLimited = attempts.length > 0 && attempts.every(a => /429|too many/i.test(a.raw));
+    throw err;
+  },
+  /* 全ノードへ並列に問い合わせる（取り込み確認の見落とし防止用） */
+  all(fn, timeoutMs = RPC_CFG.CALL_TIMEOUT_MS) {
+    return Promise.all(this.usable().map(n => withTimeout(fn(n.conn, n), timeoutMs, 'timeout')
+      .then(value => ({ node: n, ok: true, value }), error => ({ node: n, ok: false, error }))));
+  },
+  /* プリフライト済みの Tx を他のノードにも流し、混雑時に取り込まれる確率を上げる */
+  fanOut(raw, except = null) {
+    for (const n of this.usable()) {
+      if (n === except) continue;
+      withTimeout(n.conn.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 }), RPC_CFG.SEND_TIMEOUT_MS, 'timeout').catch(() => {});
+    }
+  },
+  async verifyAll() {
+    await Promise.all(this.nodes.map(async (n) => {
+      const t0 = performance.now();
+      try {
+        const g = await withTimeout(n.conn.getGenesisHash(), RPC_CFG.CALL_TIMEOUT_MS, 'genesis: timeout');
+        n.genesis = g === DEVNET_GENESIS ? 'ok' : 'mismatch';
+        if (n.genesis === 'ok') this.markOk(n, performance.now() - t0);
+        else n.lastError = 'Devnet ではありません（genesis 不一致）→ 使用しません';
+      } catch (e) { this.markFail(n, e); }
+    }));
+    if (this.active.genesis !== 'ok') {
+      const first = this.nodes.find(n => n.genesis === 'ok' && n.cooldownUntil <= Date.now()) || this.nodes.find(n => n.genesis === 'ok');
+      if (first) this.active = first;
+    }
+    renderRpcStatus();
+    return this.nodes.some(n => n.genesis === 'ok');
+  },
+};
+
+function renderRpcStatus() {
+  if (!$('rpcList') || !rpcPool.nodes.length) return;
+  const now = Date.now(), nodes = rpcPool.nodes, a = rpcPool.active;
+  const healthy = nodes.filter(n => n.genesis === 'ok' && n.cooldownUntil <= now).length;
+  if (state.networkOk) $('netText').textContent = `NETWORK: SOLANA DEVNET ✓ (genesis verified) ─ RPC: ${a?.name} · 正常 ${healthy}/${nodes.length}`;
+  else if (state.networkOk === false) $('netText').textContent = 'NETWORK: SOLANA DEVNET（どの RPC にも接続できません）';
+  $('rpcSummary').textContent = `🛰 RPC: ${a?.name ?? '-'}${a?.latency != null ? ` (${a.latency}ms)` : ''} · 正常 ${healthy}/${nodes.length}　▸ 詳細・カスタムRPC`;
+  $('rpcList').innerHTML = nodes.map(n => {
+    const cooling = n.cooldownUntil > now;
+    const [dot, label] = n.genesis === 'mismatch' ? ['var(--danger)', 'Devnet以外']
+      : cooling ? ['var(--warn)', `後回し中 ${Math.ceil((n.cooldownUntil - now) / 1000)}s`]
+      : n.genesis === 'ok' ? ['var(--sol2)', '正常'] : ['var(--muted)', '未確認'];
+    const url = n.url.replace(/(api[-_]?key=|\/v2\/)[^/&?]+/i, '$1••••');   // API キーを画面に出さない
+    return `<tr><td><span class="rdot" style="background:${dot}"></span>${n === a ? '<b>▶ </b>' : ''}${esc(n.name)}</td>
+      <td class="mono">${esc(url)}</td><td>${label}</td><td class="mono">${n.latency != null ? n.latency + 'ms' : '-'}</td>
+      <td style="color:var(--muted)">${esc(n.lastError || '')}</td></tr>`;
+  }).join('');
+}
+
+async function checkNetwork() {
+  const bar = $('netbar');
+  if (!W) { bar.className = 'netbar ng'; $('netText').textContent = 'NETWORK: SOLANA DEVNET（ライブラリ未読込）'; return false; }
+  const ok = await rpcPool.verifyAll();
+  state.networkOk = ok;
+  bar.className = ok ? 'netbar ok' : 'netbar ng';
+  renderRpcStatus();
+  return ok;
+}
+
+async function saveCustomRpc() {
+  const url = $('customRpc').value.trim();
+  const pref = store.get(LS_PREF, {});
+  if (!url) {
+    delete pref.customRpc; store.set(LS_PREF, pref);
+    rpcPool.init(); await checkNetwork();
+    return toast('カスタム RPC を解除しました');
+  }
+  if (!/^https:\/\//i.test(url)) return toast('https:// で始まる URL を入力してください', 'error');
+  try {
+    const g = await withTimeout(makeConnection(url).getGenesisHash(), RPC_CFG.CALL_TIMEOUT_MS, 'タイムアウト');
+    if (g !== DEVNET_GENESIS) return toast('この RPC は Devnet ではありません（genesis 不一致）', 'error');
+  } catch (e) { return toast(`カスタム RPC に接続できません: ${esc(shortErr(e))}`, 'error'); }
+  pref.customRpc = url; store.set(LS_PREF, pref);
+  rpcPool.init(); await checkNetwork();
+  toast('カスタム RPC を保存しました（最優先で使用します）', 'success');
+}
+
+/* =========================================================
+   Wallet
+   ========================================================= */
+function getProvider() {
+  if (window.phantom?.solana?.isPhantom) return window.phantom.solana;
+  if (window.solflare?.isSolflare) return window.solflare;
+  if (window.backpack?.solana) return window.backpack.solana;
+  if (window.solana) return window.solana;
+  return null;
+}
+
+async function connectWallet(eager = false) {
+  const p = getProvider();
+  if (eager && !p?.isPhantom) return;   // 自動接続は Phantom の onlyIfTrusted のみ（他ウォレットでポップアップを出さない）
+  if (!p) {
+    if (!eager) {
+      toast('Solanaウォレットが見つかりません。Phantom 等をインストールしてください。', 'error');
+      window.open('https://phantom.app/', '_blank', 'noopener');
+    }
+    return;
+  }
+  if (!eager && p.isPhantom) $('phantomBanner').classList.add('show');
+  try {
+    const res = eager ? await p.connect({ onlyIfTrusted: true }) : await p.connect();
+    const pk = res?.publicKey || p.publicKey;
+    if (!pk) return;
+    state.provider = p;
+    state.pubkey = new W.PublicKey(pk.toString());
+    if (!state.listenersBound && p.on) {
+      state.listenersBound = true;
+      p.on('accountChanged', (npk) => {
+        if (npk) { state.pubkey = new W.PublicKey(npk.toString()); renderWallet(); refreshBalance(); toast('アカウントが切り替わりました'); }
+        else onDisconnected();
+      });
+      p.on('disconnect', onDisconnected);
+    }
+    renderWallet(); refreshBalance();
+    if (!eager) toast('ウォレットを接続しました（Devnet）', 'success');
+  } catch (e) {
+    if (!eager) toast('接続がキャンセルされました', 'error');
+  }
+}
+function onDisconnected() { state.pubkey = null; state.balance = null; renderWallet(); }
+async function toggleWallet() {
+  if (state.pubkey) { try { await state.provider?.disconnect(); } catch {} onDisconnected(); }
+  else connectWallet(false);
+}
+function renderWallet() {
+  const on = !!state.pubkey;
+  $('connectBtn').textContent = on ? '切断' : 'ウォレット接続';
+  $('connectBtn').className = on ? 'btn ghost sm' : 'btn primary';
+  ['addrChip', 'balChip', 'airdropBtn'].forEach(id => $(id).style.display = on ? '' : 'none');
+  if (on) {
+    const a = state.pubkey.toBase58();
+    $('addrText').textContent = short(a, 5);
+    $('addrLink').href = addrUrl(a);
+    $('addrLink').title = a;
+  }
+  $('balText').textContent = state.balance == null ? '-' : solStr(state.balance);
+}
+async function refreshBalance() {
+  if (!state.pubkey || !W) return;
+  try {
+    state.balance = (await rpcPool.call('残高取得', (c) => c.getBalance(state.pubkey, 'confirmed'))) / LAMPORTS;
+    renderWallet();
+  } catch { /* RPC一時エラーは無視 */ }
+}
+async function airdrop() {
+  if (!state.pubkey) return;
+  const btn = $('airdropBtn'); btn.disabled = true; btn.textContent = '🚰 受取中…';
+  try {
+    // Airdrop 対応ノード（公式）を優先し、失敗したら他の RPC へ。上限到達はノードを替えても同じなので即終了
+    const nodes = [...rpcPool.ordered()].sort((a, b) => (b.airdrop ? 1 : 0) - (a.airdrop ? 1 : 0));
+    const sig = await rpcPool.call('Airdrop', (c) => c.requestAirdrop(state.pubkey, 1 * LAMPORTS),
+      { nodes, timeoutMs: 20000, fatal: (e) => /airdrop limit|run dry|faucet/i.test(errText(e)) });
+    const lvl = await pollSignature(sig, { target: 'confirmed', timeoutMs: 60000 });
+    toast(`1 SOL (Devnet) を${lvl === 'unknown' ? 'リクエストしました（確定待ち）' : '受け取りました'} <a href="${txUrl(sig)}" target="_blank" rel="noopener">Tx</a>`, 'success');
+    refreshBalance();
+  } catch (e) {
+    const m = errText(e);
+    const why = /airdrop limit|run dry|faucet/i.test(m) ? '本日の Airdrop 上限に達したか、Faucet が枯渇しています'
+      : e?.rateLimited || /429|too many/i.test(m) ? 'RPC のレート制限（429）中です'
+      : e?.rpcUnavailable ? 'RPC が応答しません' : shortErr(e);
+    toast(`Airdrop 失敗: ${esc(why)}。<a href="https://faucet.solana.com/" target="_blank" rel="noopener">faucet.solana.com</a> をお試しください。`, 'error', 8000);
+  } finally { btn.disabled = false; btn.textContent = '🚰 1 SOL Airdrop'; }
+}
+
+/* =========================================================
+   AI 作戦参謀（ルールベース + ヒューリスティクス、完全オフライン）
+   ========================================================= */
+function split3(n) { const a = Math.ceil(n / 3), b = Math.ceil((n - a) / 2); return [a, b, n - a - b]; }
+function ranges(n) { const [a, b] = split3(n); return [[1, a], [a + 1, a + b], [a + b + 1, n]]; }
+
+const CATEGORIES = [
+  { key: 'vocab', label: '暗記系', icon: '🧠',
+    re: /単語|英単語|語彙|熟語|イディオム|漢字|暗記|vocab|フレーズ|用語/i,
+    defN: 60, defU: '個', base: 8, per: 0.45,
+    steps: (n, u) => { const r = ranges(n); return [
+      [`${r[0][0]}〜${r[0][1]}${u}目をインプット`, '音読＋例文で1周。覚えにくいものに印'],
+      [`${r[1][0]}〜${r[1][1]}${u}目をインプット＋前半を小テスト`, '前半の正答率を記録して取りこぼしを確認'],
+      [`${r[2][0]}〜${n}${u}目を覚えて全範囲テスト`, `全${n}${u}を赤シートで総復習。正答率8割で合格`]]; },
+    tip: '暗記は「短時間×反復」。各ステップの最後に必ず自分テストを入れると定着率が上がります。' },
+  { key: 'math', label: '演習系', icon: '📐',
+    re: /数学|微分|積分|線形|行列|確率|統計|物理|化学|力学|演習|問題集|計算|証明|ドリル/,
+    defN: 10, defU: '問', base: 15, per: 6,
+    steps: (n, u) => { const r = ranges(n); return [
+      [`例題で解法パターンを確認し、${r[0][0]}〜${r[0][1]}${u}目を解く`, '公式・定理を1行メモにしてから着手'],
+      [`${r[1][0]}〜${r[1][1]}${u}目を解く`, '5分止まったらヒントを見てOK。止まった箇所を記録'],
+      [`${r[2][0]}〜${n}${u}目を解き、答え合わせ＆解き直し`, '間違えた問題だけもう一度白紙から']]; },
+    tip: '演習は「1問に固執しない」こと。止まった問題は印を付けて先へ進みましょう。' },
+  { key: 'reading', label: 'インプット系', icon: '📖',
+    re: /読む|読書|読了|精読|多読|教科書|テキスト|参考書|文献|章を|ページ|頁|資料を読/,
+    defN: 30, defU: 'ページ', base: 5, per: 2.5,
+    steps: (n, u) => { const r = ranges(n); return [
+      [`p.${r[0][0]}〜${r[0][1]} を読む`, '見出しと図表を先に眺め、キーワードに線を引く'],
+      [`p.${r[1][0]}〜${r[1][1]} を読む`, '各節の要点を余白に1行で書く'],
+      [`p.${r[2][0]}〜${n} を読み、全体を3行で要約`, '要約が書ければ理解できた証拠']]; },
+    tip: '読む前に「何を知りたいか」を1つ決めると、読む速度と記憶が段違いになります。' },
+  { key: 'report', label: 'ライティング系', icon: '✍️',
+    re: /レポート|論文|小論|エッセイ|作文|感想文|卒論|修論|記事|ブログ|essay|report|リアクションペーパー|リアペ/i,
+    defN: 0, defU: '字', base: 40, per: 0.04,
+    steps: (n, u) => [
+      ['問いを1行で決め、参考資料を3つ集める', 'テーマ→問い→仮の結論、の順でメモ'],
+      [`構成（序論・本論・結論）を作り、本論から書く${n ? `（目標 約${Math.round(n * 0.6)}${u}）` : ''}`, '完璧を目指さず、まず最後まで書き切る'],
+      ['序論・結論を書き、推敲して提出', '字数・形式・参考文献・提出先を最終チェック']],
+    tip: 'レポートは「白紙の恐怖」が最大の敵。最初のステップは5分で終わる小ささにしてあります。' },
+  { key: 'slides', label: 'プレゼン系', icon: '🎤',
+    re: /スライド|プレゼン|発表|パワポ|ppt|ポスター|ゼミ/i,
+    defN: 8, defU: '枚', base: 30, per: 8,
+    steps: (n, u) => [
+      [`伝えたいメッセージを1文で決め、${n}${u}分の構成を書く`, '各スライドのタイトルだけ先に並べる'],
+      [`スライドを${n}${u}作成（1枚1メッセージ）`, 'デザインは最後。まず中身を埋める'],
+      ['通しリハーサルを2回、時間を計って調整', '想定質問を3つ用意しておく']],
+    tip: 'スライドは「タイトルだけ先に全部書く」と迷いが消えます。' },
+  { key: 'code', label: '開発系', icon: '💻',
+    re: /プログラ|コード|コーディング|実装|python|java|javascript|c\+\+|c言語|アルゴリズム|アプリ|バグ|デバッグ|開発|競プロ|atcoder/i,
+    defN: 0, defU: '', base: 90, per: 0,
+    steps: () => [
+      ['要件を読み、入出力とテストケースを3つ書き出す', '仕様が曖昧な点はメモしておく'],
+      ['最小限動くものを実装する', 'まず動かす。きれいにするのは後'],
+      ['テスト・エッジケース確認→整理して提出', '提出形式（ファイル名・言語バージョン）を確認']],
+    tip: 'まず「Hello World レベルで動く状態」を最速で作るのがコツです。' },
+  { key: 'exam', label: '試験対策系', icon: '🎯',
+    re: /TOEIC|TOEFL|IELTS|英検|試験|テスト|期末|中間|過去問|資格|検定|模試|小テスト/i,
+    defN: 0, defU: '', base: 90, per: 0,
+    steps: () => [
+      ['出題範囲を確認し、苦手分野を3つ書き出す', 'シラバス・過去問の傾向をざっと把握'],
+      ['過去問/問題集を時間を計って解く', '本番と同じ制限時間で'],
+      ['間違えた問題を解き直し、要点を1枚にまとめる', 'まとめシートは試験直前の見直し用']],
+    tip: '試験対策は「解いてから覚える」。インプットより先にアウトプットから始めましょう。' },
+  { key: 'generic', label: '汎用タスク', icon: '🗂',
+    re: /.*/, defN: 0, defU: '', base: 60, per: 0,
+    steps: (n, u, t) => [
+      [`「${t.slice(0, 20)}」の最初の5分でやることを決めて着手`, '机の上を片付け、スマホを別の部屋へ'],
+      ['本体作業を進める（中間地点で一度見直し）', '半分経過時点で進捗を自己チェック'],
+      ['仕上げ・見直しをして完了報告', '監視役に完了を伝えるまでがミッション']],
+    tip: '大きなタスクほど「最初の5分」で勝負が決まります。' },
+];
+
+function parseTask(text) {
+  const t = text.trim();
+  // 明示的な時間指定（例: 2時間で / 30分以内）
+  let explicitMin = null;
+  const tm = t.match(/(\d+(?:\.\d+)?)\s*(時間|h|hour)/i);
+  const mm = t.match(/(\d+)\s*(分|min)/i);
+  if (tm) explicitMin = parseFloat(tm[1]) * 60 + (mm ? parseInt(mm[1]) : 0);
+  else if (mm) explicitMin = parseInt(mm[1]);
+  // 分量（例: 100個 / 2000字 / 15問 / 40ページ / 10枚）
+  const qm = t.replace(/(\d+(?:\.\d+)?)\s*(時間|分|h|min)/gi, '')
+              .match(/(\d{1,5})\s*(個|語|単語|問|題|ページ|頁|p\b|P\b|枚|文字|字|章|行|words?)?/);
+  let n = qm ? parseInt(qm[1]) : 0;
+  let u = qm?.[2] || '';
+  if (/^(単語|語|words?)$/i.test(u)) u = '個';
+  if (/^(頁|p|P)$/.test(u)) u = 'ページ';
+  if (u === '文字') u = '字';
+  if (u === '題') u = '問';
+
+  let cat = CATEGORIES.find(c => c.key !== 'generic' && c.re.test(t)) || CATEGORIES.at(-1);
+  // 単位から推定を補正
+  if (cat.key === 'generic' || cat.key === 'exam') {
+    if (u === '問') cat = CATEGORIES.find(c => c.key === 'math');
+    else if (u === 'ページ') cat = CATEGORIES.find(c => c.key === 'reading');
+    else if (u === '字') cat = CATEGORIES.find(c => c.key === 'report');
+    else if (u === '個' && cat.key === 'exam') cat = CATEGORIES.find(c => c.key === 'vocab');
+  }
+  const examFlavor = /TOEIC|TOEFL|IELTS|英検|試験|テスト|期末|中間/i.test(t) && cat.key !== 'exam';
+  const urgent = /今日|今夜|今すぐ|明日|締切|締め切り|〆切|期限|提出|ヤバ|やば|急/.test(t);
+  const hard = /難|大量|全部|全範囲|卒論|修論|徹夜|苦手/.test(t);
+  return { t, n, u, cat, explicitMin, urgent, hard, examFlavor };
+}
+
+function roundNice(min) {
+  if (min < 60) return Math.max(10, Math.round(min / 5) * 5);
+  if (min < 240) return Math.round(min / 15) * 15;
+  return Math.round(min / 60) * 60;
+}
+
+function aiPlan(text) {
+  const P = parseTask(text);
+  const { cat } = P;
+  const n = P.n || cat.defN;
+  const u = P.u || cat.defU;
+  const steps = cat.steps(n, u, P.t);
+
+  // ---- 制限時間 ----
+  let minutes, timeWhy;
+  if (P.explicitMin) { minutes = P.explicitMin; timeWhy = '入力に含まれていた時間指定を採用'; }
+  else {
+    minutes = cat.base + cat.per * n;
+    if (cat.key === 'report' && !P.n) minutes = 120;
+    const notes = [`${cat.label}の標準ペース`];
+    if (P.n) notes.push(`分量 ${n}${u}`);
+    if (P.hard) { minutes *= 1.3; notes.push('高難度 ×1.3'); }
+    if (P.urgent) { minutes *= 0.85; notes.push('締切が迫っているので短め ×0.85'); }
+    timeWhy = notes.join(' / ');
+  }
+  minutes = Math.min(1440, roundNice(minutes));
+
+  // ---- デポジット額 ----
+  let dep = 0.01 + (minutes / 60) * 0.01;
+  if (P.urgent) dep += 0.01;
+  if (P.hard) dep += 0.01;
+  dep = Math.min(0.1, Math.max(0.01, Math.round(dep / 0.005) * 0.005));
+  let depWhy = '「失うと地味に痛いが、払えなくはない」心理的ラインを狙った額';
+  if (state.balance != null) {
+    const cap = Math.max(MIN_DEPOSIT, Math.floor((state.balance - 0.01) * 0.3 * 1000) / 1000);
+    if (dep > cap) { dep = cap; depWhy = `残高 ${solStr(state.balance)} SOL の約30%を上限に調整`; }
+  }
+  dep = +dep.toFixed(3);
+
+  return { P, steps, minutes, timeWhy, dep, depWhy, title: P.t };
+}
+
+async function typeInto(el, text, speed = 12) {
+  for (let i = 0; i < text.length; i++) {
+    el.textContent += text[i];
+    if (i % 2 === 0) await sleep(speed);
+  }
+}
+
+async function runAI() {
+  const text = $('aiInput').value.trim();
+  if (!text) { toast('課題内容を入力してください', 'error'); $('aiInput').focus(); return; }
+  const btn = $('aiBtn'); btn.disabled = true;
+  const log = $('aiLog');
+  log.innerHTML = `<div class="ai-msg"><div class="ai-avatar">🤖</div><div class="ai-text"><span class="dots">作戦を立案中</span></div></div>`;
+  await sleep(700 + Math.random() * 500);
+
+  const plan = aiPlan(text);
+  const { P } = plan;
+  log.innerHTML = `<div class="ai-msg"><div class="ai-avatar">${plan.P.cat.icon}</div><div style="flex:1"><div class="ai-text" id="aiTyping"></div><ol class="ai-steps" id="aiSteps"></ol><div class="ai-text" id="aiTyping2" style="margin-top:8px"></div></div></div>`;
+  const scale = P.n ? `${P.n}${P.u || plan.P.cat.defU}` : '分量指定なし（標準ボリュームで想定）';
+  await typeInto($('aiTyping'),
+    `🔍 分析: 「${text}」\n   → タイプ: ${P.cat.label} / 規模: ${scale}${P.urgent ? ' / ⚠ 締切モード' : ''}${P.hard ? ' / 🔥 高難度' : ''}\n🗺 作戦: 3つのミニステップに分解しました`);
+  for (const [s, sub] of plan.steps) {
+    const li = document.createElement('li');
+    li.innerHTML = `${esc(s)}<em>${esc(sub)}</em>`;
+    $('aiSteps').appendChild(li);
+    await sleep(220);
+  }
+  await typeInto($('aiTyping2'),
+    `⏱ 推奨制限時間: ${fmtDur(plan.minutes * 60000)}（${plan.timeWhy}）\n` +
+    `💰 推奨デポジット: ${plan.dep} SOL（${plan.depWhy}）\n` +
+    `💡 ${P.cat.tip}${P.examFlavor ? '\n🎯 試験が控えているなら、出題頻度の高いものから優先しましょう。' : ''}\n` +
+    `🎬 デモで試すなら制限時間を「30秒」に切り替えてOK。`);
+
+  // ---- フォームへ自動反映 ----
+  const flash = (el) => { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); };
+  $('pactTitle').value = plan.title; flash($('pactTitle'));
+  $('pactAmount').value = plan.dep; flash($('pactAmount'));
+  $('customMin').value = plan.minutes; flash($('customMin'));
+  setDuration(plan.minutes * 60000, null);
+  document.querySelectorAll('.stepIn').forEach((el, i) => { el.value = plan.steps[i][0]; flash(el); });
+  btn.disabled = false;
+  toast('AIの作戦を契約フォームに反映しました', 'success');
+}
+
+/* =========================================================
+   Duration presets
+   ========================================================= */
+function setDuration(ms, presetBtn) {
+  state.durationMs = ms;
+  document.querySelectorAll('.preset').forEach(b => b.classList.toggle('active', b === presetBtn || (!presetBtn && +b.dataset.ms === ms)));
+  $('durationLabel').innerHTML = `設定: <b>${fmtDur(ms)}</b>`;
+}
+
+/* =========================================================
+   Transaction pipeline（RPC遅延・ブロックハッシュ期限切れ・RPCフォールバック対策つき）
+   ========================================================= */
+const TX_CFG = {
+  BLOCKHASH_TRIES: 3,               // ブロックハッシュ取得の試行ラウンド数（各ラウンドで全 RPC を順に試す）
+  BLOCKHASH_MIN_REMAINING: 30,      // 送信直前に必要なブロックハッシュの残り寿命（ブロック数。≈12秒）
+  WALLET_SIGN_ROUNDS: 2,            // ウォレット署名の最大回数（期限切れ時に1回だけ再署名を依頼）
+  LOCAL_SIGN_ROUNDS: 3,             // 金庫（ブラウザ内の鍵）の最大署名回数
+  SEND_TRIES: 6,                    // 送信の試行ラウンド数（各ラウンドで全 RPC を順に試す）
+  POLL_MS: 1500,                    // ステータス確認の間隔
+  REBROADCAST_MS: 4000,             // ブロックハッシュ有効期間中の再ブロードキャスト間隔
+  CONFIRM_TIMEOUT_MS: 150000,       // Confirmed 待ちの上限（Devnet のブロックハッシュ寿命 ≈60〜90秒 より長く取る）
+  FINALIZE_TIMEOUT_MS: 180000,      // Finalized 待ちの上限
+  EXPIRY_NULL_CHECKS: 3,            // 期限切れ後に全 RPC で「見つからない」を連続何回確認したら未取り込みと確定するか
+  BG_VERIFY_TIMEOUT_MS: 15 * 60000, // 送信済み・未確認の入金をバックグラウンドで確認し続ける時間
+};
+const TX_STEPS = ['build', 'sign', 'send', 'confirm', 'final'];
+const ICONS = { idle: '⬜', active: '⏳', done: '✅', fail: '❌', warn: '⚠️' };
+const progress = {
+  open(title) {
+    $('txPanel').classList.add('show');
+    $('txTitle').textContent = title;
+    $('txMeta').innerHTML = '';
+    $('txNote').innerHTML = '';
+    $('txError').hidden = true;
+    TX_STEPS.forEach(k => this.set(k, 'idle'));
+  },
+  set(k, st) {
+    const li = document.querySelector(`#txSteps li[data-k="${k}"]`);
+    li.className = st === 'idle' ? '' : st;
+    li.querySelector('.ic').textContent = ICONS[st];
+  },
+  meta(html) { $('txMeta').innerHTML = html; },
+  note(html) { $('txNote').innerHTML = html; },
+  showError(info, e) {
+    $('txErrTitle').textContent = `${info.icon} ${info.title}`;
+    $('txErrReason').textContent = info.reason;
+    $('txErrHint').textContent = `👉 ${info.hint}`;
+    const lines = [errText(e)];
+    if (e?.rpcNode) lines.push(`RPC: ${e.rpcNode}`);
+    if (e?.attempts?.length) lines.push('', 'RPC ごとの結果:', ...e.attempts.map(a => `  - ${a.node}: ${a.raw || a.msg}`));
+    $('txErrRaw').textContent = lines.join('\n');
+    $('txError').hidden = false;
+  },
+};
+
+/**
+ * 失敗理由を利用者向けに分類する。
+ * ctx: { balance, need }（残高不足の表示用）
+ */
+function explainTxError(e, ctx = {}) {
+  const m = errText(e) + ' ' + (e?.attempts || []).map(a => a.raw || a.msg).join(' ');
+  if (e?.code === 4001 || /user rejected|rejected the request|user denied|user cancel|request was cancel/i.test(m))
+    return { code: 'REJECTED', icon: '✋', title: '署名がキャンセルされました',
+      reason: 'ウォレットで署名が拒否、またはキャンセルされました。',
+      hint: '送金は行われていません。もう一度ボタンを押し、ウォレットで承認してください。' };
+  if (/insufficient funds for rent/i.test(m))
+    return { code: 'RENT', icon: '🪙', title: '送金額が少なすぎます（レント不足）',
+      reason: '送金先の新しいアカウントが、維持に必要な最低額（rent-exempt 約 0.00089 SOL）を満たしません。',
+      hint: `賭け金を ${MIN_DEPOSIT} SOL 以上にしてください。` };
+  // 「may not be used to pay transaction fees」= 残高 0 のウォレット（Devnet 実 RPC の文言で確認済み）
+  if (/insufficient (lamports|funds)|insufficientfundsforfee|may not be used to pay transaction fees|debit an account but found no record of a prior credit|custom program error: 0x1\b/i.test(m))
+    return { code: 'INSUFFICIENT', icon: '💸', title: '残高不足',
+      reason: `送金額と手数料に対して SOL が足りません（残高 ${ctx.balance != null ? solStr(ctx.balance) + ' SOL' : '不明'}${ctx.need != null ? ` / 必要額 約 ${solStr(ctx.need)} SOL` : ''}）。`,
+      hint: '「🚰 1 SOL Airdrop」または faucet.solana.com で Devnet SOL を補充してから再試行してください。' };
+  if (e?.expired || /blockhash not found|block height exceeded|blockheightexceeded|has expired/i.test(m))
+    return { code: 'EXPIRED', icon: '⌛', title: 'ブロックハッシュ期限切れ',
+      reason: 'RPC の混雑や署名の遅れにより、ブロックハッシュの有効期限（約 60〜90 秒）内にトランザクションがブロックへ取り込まれませんでした。',
+      hint: 'SOL は移動していません。もう一度お試しください（毎回、送金直前に最新のブロックハッシュで作り直します）。' };
+  if (e?.onchainFailed)
+    return { code: 'ONCHAIN', icon: '⛔', title: 'オンチェーンで実行失敗',
+      reason: 'トランザクションはブロックに入りましたが、実行時にエラーになりました。',
+      hint: '送金額は移動していません（手数料のみ消費された可能性があります）。下の詳細を確認してください。' };
+  if (e?.rateLimited)
+    return { code: 'RATE_LIMIT', icon: '🚦', title: 'RPC のレート制限',
+      reason: `公開 Devnet RPC がリクエスト過多（HTTP 429）で応答を拒否しました。フォールバック先 ${e.attempts?.length ?? ''} 件もすべて制限中です。`,
+      hint: '30 秒〜1 分ほど待ってから再試行してください。上部の RPC 設定から API キー付きのカスタム RPC を追加することもできます。' };
+  if (e?.rpcUnavailable || e?.timeout || /failed to fetch|fetch failed|networkerror|load failed|abort|timed? ?out|50[234]|econn|enotfound/i.test(m))
+    return { code: 'RPC_DOWN', icon: '📡', title: 'RPC 応答なし',
+      reason: `Devnet RPC が応答しませんでした（${e?.attempts?.length || rpcPool.nodes.length} 個のエンドポイントで失敗またはタイムアウト）。混雑・障害・ネット接続断の可能性があります。`,
+      hint: 'インターネット接続を確認し、しばらくしてから再試行してください。' };
+  if (e?.simulation || /simulation failed/i.test(m))
+    return { code: 'SIMULATION', icon: '🧪', title: '送金シミュレーション失敗',
+      reason: 'RPC での事前シミュレーションで、トランザクションが拒否されました。',
+      hint: '送金先アドレスや金額を確認してください。ログを下の詳細に表示しています。' };
+  if (/wallet|not connected|provider/i.test(m))
+    return { code: 'WALLET', icon: '👛', title: 'ウォレットエラー', reason: m.slice(0, 160), hint: 'ウォレットを再接続してから再試行してください。' };
+  return { code: 'UNKNOWN', icon: '❓', title: '送金に失敗しました', reason: m.slice(0, 200), hint: '下の詳細を確認し、しばらくしてから再試行してください。' };
+}
+
+/* 署名(64byte) → Base58 文字列（= トランザクションID）。送信前に Tx ID を確定させるために使う */
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function b58encode(bytes) {
+  const digits = [];
+  for (const byte of bytes) {
+    let carry = byte;
+    for (let j = 0; j < digits.length; j++) { carry += digits[j] << 8; digits[j] = carry % 58; carry = (carry / 58) | 0; }
+    while (carry) { digits.push(carry % 58); carry = (carry / 58) | 0; }
+  }
+  let out = '';
+  for (const byte of bytes) { if (byte === 0) out += '1'; else break; }
+  for (let i = digits.length - 1; i >= 0; i--) out += B58[digits[i]];
+  return out;
+}
+
+/**
+ * SystemProgram の Transfer 命令を Buffer に依存せず組み立てる。
+ * web3.js の SystemProgram.transfer() は lamports(u64) の変換でグローバル Buffer を参照するため、
+ * ブラウザでは「Buffer is not defined」になる。ここでは Uint8Array + DataView で同じバイト列を作る。
+ *   data = u32 LE 命令番号(2 = Transfer) + u64 LE lamports  （計 12 バイト）
+ */
+function transferIx(fromPubkey, toPubkey, lamports) {
+  if (!Number.isSafeInteger(lamports) || lamports <= 0) throw new Error(`送金額（lamports）が不正です: ${lamports}`);
+  const data = new Uint8Array(12);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 2, true);                    // SystemInstruction::Transfer
+  view.setBigUint64(4, BigInt(lamports), true);  // lamports (u64, little-endian)
+  return new W.TransactionInstruction({
+    programId: W.SystemProgram.programId,
+    keys: [
+      { pubkey: fromPubkey, isSigner: true, isWritable: true },
+      { pubkey: toPubkey, isSigner: false, isWritable: true },
+    ],
+    // web3.js 内部の Buffer があればそれに包む（ウォレット拡張が Buffer 前提でも安全）。無ければ Uint8Array のまま
+    data: typeof Buffer !== 'undefined' ? Buffer.from(data) : data,
+  });
+}
+
+/* 「送金されていないことが確定した」エラー。これ以外は送信済みの可能性ありとして扱う */
+function definitiveError(msg, extra = {}) { const e = new Error(msg); e.definitive = true; return Object.assign(e, extra); }
+
+async function withRetry(fn, tries, onRetry) {
+  let last;
+  for (let i = 1; i <= tries; i++) {
+    try { return await fn(); }
+    catch (e) {
+      if (e.definitive) throw e;
+      last = e;
+      if (i < tries) { onRetry?.(i, e); await sleep(Math.min(8000, 700 * 2 ** (i - 1))); }
+    }
+  }
+  throw last;
+}
+
+/* ノードを替えても結果が変わらない「Tx 自体の問題」か（Blockhash not found はノード遅延の可能性があるので除外） */
+const isSimFailure = (e) => {
+  const m = errText(e);
+  return !/blockhash not found/i.test(m) &&
+    /simulation failed|insufficient|custom program error|debit an account|instructionerror/i.test(m);
+};
+const isAlreadyProcessed = (e) => /already been processed/i.test(errText(e)) || !!e?.attempts?.some(a => /already been processed/i.test(a.raw));
+
+/**
+ * 生Txをプリフライト付きで送信する。RPC が失敗・タイムアウトしたら別 RPC へ、全滅なら指数バックオフで再送。
+ * 1つの RPC が受理したら、他の RPC にも同じ Tx を流す（ファンアウト）。
+ * 戻り値: { ok, node, blockhashNotFound, err }
+ */
+async function broadcast(raw, onRetry) {
+  let lastErr = null, bhMiss = 0;
+  for (let i = 1; i <= TX_CFG.SEND_TRIES; i++) {
+    try {
+      const { node } = await rpcPool.call('送信',
+        (c) => c.sendRawTransaction(raw, { skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 5 }),
+        { timeoutMs: RPC_CFG.SEND_TIMEOUT_MS, fatal: isSimFailure, withNode: true });
+      rpcPool.fanOut(raw, node);
+      return { ok: true, node };
+    } catch (e) {
+      if (isAlreadyProcessed(e)) return { ok: true };
+      if (isSimFailure(e)) throw definitiveError(errText(e), { simulation: true, rpcNode: e.rpcNode });
+      lastErr = e;
+      // 全 RPC が「Blockhash not found」→ ブロックハッシュ自体が古い可能性が高いので、作り直しを促す
+      if (e.attempts?.length && e.attempts.every(a => /blockhash not found/i.test(a.raw))) {
+        if (++bhMiss >= 2) return { ok: false, blockhashNotFound: true, err: e };
+      }
+      if (i < TX_CFG.SEND_TRIES) { onRetry?.(i, e); await sleep(Math.min(8000, 800 * 2 ** (i - 1))); }
+    }
+  }
+  return { ok: false, err: lastErr }; // どの RPC も受理を返さなかった。ただし届いている可能性があるので確認へ進む
+}
+
+/* 確認中の再ブロードキャスト。まだどの RPC もプリフライトを通していなければプリフライト付きで送る
+   （失敗する Tx を skipPreflight で流して手数料だけ取られるのを防ぐ） */
+function makeRebroadcaster(raw, preflightPassed) {
+  let passed = preflightPassed;
+  return async () => {
+    if (passed) { rpcPool.fanOut(raw); return; }
+    try {
+      const { node } = await rpcPool.call('再送信',
+        (c) => c.sendRawTransaction(raw, { preflightCommitment: 'confirmed', maxRetries: 5 }),
+        { timeoutMs: RPC_CFG.SEND_TIMEOUT_MS, fatal: isSimFailure, withNode: true });
+      passed = true;
+      rpcPool.fanOut(raw, node);
+    } catch (e) {
+      if (isAlreadyProcessed(e)) { passed = true; return; }
+      if (isSimFailure(e)) throw definitiveError(errText(e), { simulation: true, rpcNode: e.rpcNode });
+    }
+  };
+}
+
+/**
+ * 署名のステータスをポーリングする。RPC エラーは別ノードへフォールバックしつつ継続。
+ * 戻り値: 'finalized' | 'confirmed' | 'unknown'（タイムアウト）
+ * オンチェーン失敗、またはブロックハッシュ期限切れで未取り込みが確定した場合は definitive エラーを投げる。
+ */
+async function pollSignature(sig, { target = 'confirmed', timeoutMs, lastValidBlockHeight = null, rebroadcast = null, onTick } = {}) {
+  const RANK = { processed: 0, confirmed: 1, finalized: 2 };
+  const getStatus = (c) => c.getSignatureStatuses([sig], { searchTransactionHistory: true });
+  const t0 = Date.now();
+  let level = null, rpcErrors = 0, nullAfterExpiry = 0, lastCast = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    try {
+      let st = (await rpcPool.call('ステータス確認', getStatus)).value[0];
+      if (!st && lastValidBlockHeight != null) {
+        const h = await rpcPool.call('ブロック高取得', (c) => c.getBlockHeight('confirmed'));
+        if (h > lastValidBlockHeight) {
+          // 遅れているノードの見落としで誤って「未取り込み」と判定しないよう、全 RPC に問い合わせる
+          const rs = await rpcPool.all(getStatus);
+          st = rs.find(r => r.ok && r.value?.value?.[0])?.value.value[0] || null;
+          if (!st && ++nullAfterExpiry >= TX_CFG.EXPIRY_NULL_CHECKS)
+            throw definitiveError('ブロックハッシュの有効期限が切れ、トランザクションは取り込まれませんでした（SOLは移動していません）', { expired: true });
+        } else {
+          nullAfterExpiry = 0;
+          if (rebroadcast && Date.now() - lastCast > TX_CFG.REBROADCAST_MS) { lastCast = Date.now(); await rebroadcast(); }
+        }
+      }
+      if (st) nullAfterExpiry = 0;
+      if (st?.err) throw definitiveError('トランザクションがオンチェーンで失敗しました: ' + JSON.stringify(st.err), { onchainFailed: true });
+      if (st?.confirmationStatus) level = st.confirmationStatus;
+      if (level && RANK[level] >= RANK[target]) return level;
+    } catch (e) {
+      if (e.definitive) throw e;
+      rpcErrors++;
+    }
+    onTick?.({ elapsed: Date.now() - t0, level, rpcErrors });
+    await sleep(TX_CFG.POLL_MS);
+  }
+  return level === 'confirmed' || level === 'finalized' ? level : 'unknown';
+}
+
+/**
+ * buildTx() で作った Tx に「送金直前に取得した最新 blockhash (confirmed)」を設定し、
+ * 署名→送信→Confirmed→Finalized まで進めて各段階を UI に表示する。
+ * ブロックハッシュが古くなった／期限切れになった場合は、最新のもので作り直して再署名する（maxRounds 回まで）。
+ * 戻り値: { sig, level, lastValidBlockHeight }
+ *   level = 'finalized' | 'confirmed' | 'pending'
+ *   'pending' = 署名・送信済みだが、タイムアウトまでに確定を確認できなかった（取り込まれている可能性あり）
+ * 例外を投げるのは「送金されていないことが確実」な場合のみ（準備失敗・署名拒否・definitive エラー）。
+ * 例外には e.info（explainTxError の結果）を付け、画面にも理由を表示する。
+ */
+async function submitTx(buildTx, { feePayer, sign, title, onSigned, maxRounds = TX_CFG.WALLET_SIGN_ROUNDS, wallet = true, ctx = {} }) {
+  progress.open(title);
+  let stage = 'build', sig = null, lvbh = null;
+  const sigHtml = () => `署名: <a href="${txUrl(sig)}" target="_blank" rel="noopener"><code>${short(sig, 10)}</code></a>`;
+  const rpcNote = (n) => n ? ` <span style="color:var(--warn)">RPC応答エラー ${n}回（別RPCで自動リトライ中）</span>` : '';
+  try {
+    for (let round = 1; ; round++) {
+      const retryRound = (why) => {
+        if (round >= maxRounds) return false;
+        progress.note(`🔄 ${esc(why)} 最新のブロックハッシュで作り直し、${wallet ? 'もう一度ウォレットで署名をお願いします' : '自動で署名し直します'}（${round + 1}/${maxRounds} 回目）`);
+        sig = null;
+        TX_STEPS.forEach(k => progress.set(k, 'idle'));
+        return true;
+      };
+
+      // ① 送金直前に最新のブロックハッシュ（confirmed）を取得（失敗したら別 RPC へ）
+      stage = 'build'; progress.set('build', 'active');
+      progress.meta('最新ブロックハッシュ（confirmed）を取得中…');
+      const { value: bh, node: bhNode } = await withRetry(
+        () => rpcPool.call('ブロックハッシュ取得', (c) => c.getLatestBlockhash('confirmed'), { withNode: true }),
+        TX_CFG.BLOCKHASH_TRIES,
+        (i) => progress.meta(`どの RPC もブロックハッシュを返しませんでした。再試行中… (${i}/${TX_CFG.BLOCKHASH_TRIES - 1})`));
+      lvbh = bh.lastValidBlockHeight;
+      const tx = buildTx();
+      tx.recentBlockhash = bh.blockhash;
+      tx.feePayer = feePayer;
+      progress.set('build', 'done');
+
+      // ② 署名
+      stage = 'sign'; progress.set('sign', 'active');
+      progress.meta(`ブロックハッシュ <code>${short(bh.blockhash, 6)}</code> を取得（via ${esc(bhNode.name)}）。${wallet ? 'ウォレットで署名してください…' : '署名中…'}`);
+      const signed = await sign(tx);
+      if (!signed?.signature) throw new Error('署名を取得できませんでした');
+      sig = b58encode(signed.signature);   // Tx ID は署名から送信前に確定する
+      progress.set('sign', 'done');
+
+      // ③ 送信直前にブロックハッシュの残り寿命を確認（ウォレットでの承認に時間がかかった場合の期限切れ対策）
+      const height = await rpcPool.call('ブロック高取得', (c) => c.getBlockHeight('confirmed')).catch(() => null);
+      if (height != null && lvbh - height < TX_CFG.BLOCKHASH_MIN_REMAINING) {
+        const why = `署名までに時間がかかり、ブロックハッシュの残り寿命が ${Math.max(0, lvbh - height)} ブロックしかありません。`;
+        if (retryRound(why)) continue;
+        throw definitiveError(why + '期限切れのため送信を中止しました。', { expired: true });
+      }
+      const raw = signed.serialize();
+      onSigned?.(sig, lvbh);
+
+      // ④ 送信（失敗・遅延したら別 RPC にフォールバック）
+      stage = 'send'; progress.set('send', 'active');
+      progress.meta(`${sigHtml()}<br>Devnet RPC へ送信中…`);
+      const b = await broadcast(raw,
+        (i, e) => progress.meta(`${sigHtml()}<br>送信に失敗（${esc(shortErr(e))}）。RPC を切り替えて再送信中… (${i}/${TX_CFG.SEND_TRIES - 1})`));
+      if (b.blockhashNotFound) {
+        const why = 'どの RPC もブロックハッシュを認識できませんでした（Blockhash not found）。';
+        if (retryRound(why)) continue;
+        throw definitiveError(why, { expired: true, attempts: b.err?.attempts });
+      }
+      progress.set('send', b.ok ? 'done' : 'warn');
+      if (b.node) progress.note(`📡 ${esc(b.node.name)} が受理（他の RPC にも同時送信）`);
+      else progress.note('📡 RPC から受理の応答はありませんでしたが、届いている可能性があるため確認を続けます');
+
+      // ⑤ Confirmed 待ち（期限切れが確定したら作り直し）
+      stage = 'confirm'; progress.set('confirm', 'active');
+      let c;
+      try {
+        c = await pollSignature(sig, {
+          target: 'confirmed', timeoutMs: TX_CFG.CONFIRM_TIMEOUT_MS, lastValidBlockHeight: lvbh,
+          rebroadcast: makeRebroadcaster(raw, b.ok),
+          onTick: ({ elapsed, rpcErrors }) => progress.meta(
+            `${sigHtml()}<br>クラスタの投票（Confirmed）を待っています… ${Math.floor(elapsed / 1000)}s / 最大 ${TX_CFG.CONFIRM_TIMEOUT_MS / 1000}s${rpcNote(rpcErrors)}`),
+        });
+      } catch (e) {
+        if (e.expired && retryRound('ブロックハッシュの有効期限内にブロックへ取り込まれませんでした。')) continue;
+        throw e;
+      }
+      if (c === 'unknown') {
+        progress.set('confirm', 'warn');
+        progress.meta(`${sigHtml()}<br>⚠️ 送信済みですが ${TX_CFG.CONFIRM_TIMEOUT_MS / 1000} 秒以内に確定を確認できませんでした。バックグラウンドで確認を続けます。`);
+        return { sig, level: 'pending', lastValidBlockHeight: lvbh };
+      }
+      progress.set('confirm', 'done');
+
+      // ⑥ Finalized 待ち
+      stage = 'final'; progress.set('final', 'active');
+      const f = c === 'finalized' ? 'finalized' : await pollSignature(sig, {
+        target: 'finalized', timeoutMs: TX_CFG.FINALIZE_TIMEOUT_MS,
+        onTick: ({ elapsed, rpcErrors }) => progress.meta(
+          `${sigHtml()}<br>Finalized（ロールバック不可）を待機中… ${Math.floor(elapsed / 1000)}s <span style="opacity:.7">（通常 13〜30 秒）</span>${rpcNote(rpcErrors)}`),
+      });
+      if (f !== 'finalized') {
+        progress.set('final', 'warn');
+        progress.meta(`${sigHtml()}<br>⚠️ Finalized 待ちがタイムアウトしました（Confirmed までは完了）。`);
+        return { sig, level: 'confirmed', lastValidBlockHeight: lvbh };
+      }
+      progress.set('final', 'done');
+      progress.meta(`${sigHtml()}<br>✅ Finalized ─ オンチェーンで確定しました。`);
+      return { sig, level: 'finalized', lastValidBlockHeight: lvbh };
+    }
+  } catch (e) {
+    progress.set(stage, 'fail');
+    const info = explainTxError(e, ctx);
+    progress.meta(`${sig ? sigHtml() + '<br>' : ''}❌ ${esc(info.title)}`);
+    progress.showError(info, e);
+    e.stage = stage; e.sig = sig; e.lastValidBlockHeight = lvbh; e.info = info;
+    throw e;
+  }
+}
+
+/* 契約金庫（ブラウザ生成キーペア）から全額を送り出す。期限切れ時は submitTx が最新 blockhash で自動再署名 */
+async function drainEscrow(secret, toBase58, title) {
+  const kp = W.Keypair.fromSecretKey(Uint8Array.from(secret));
+  const bal = await withRetry(() => rpcPool.call('金庫残高取得', (c) => c.getBalance(kp.publicKey, 'confirmed')), TX_CFG.BLOCKHASH_TRIES);
+  if (bal <= FEE_LAMPORTS) return { sig: null, level: 'empty', lamports: 0 };
+  const lamports = bal - FEE_LAMPORTS;
+  const r = await submitTx(
+    () => new W.Transaction().add(transferIx(kp.publicKey, new W.PublicKey(toBase58), lamports)),
+    { feePayer: kp.publicKey, sign: async (t) => { t.sign(kp); return t; }, title, maxRounds: TX_CFG.LOCAL_SIGN_ROUNDS, wallet: false });
+  return { ...r, lamports };
+}
+
+/* =========================================================
+   Pact lifecycle
+   ========================================================= */
+function readForm() {
+  const title = $('pactTitle').value.trim();
+  const amount = parseFloat($('pactAmount').value);
+  const watcherStr = $('pactWatcher').value.trim();
+  const mode = $('pactMode').value;
+  const steps = [...document.querySelectorAll('.stepIn')].map(i => i.value.trim()).filter(Boolean);
+  if (!title) throw new Error('課題タイトルを入力してください');
+  if (!(amount >= MIN_DEPOSIT)) throw new Error(`賭け金は ${MIN_DEPOSIT} SOL 以上にしてください`);
+  if (amount > 5) throw new Error('デモのため賭け金の上限は 5 SOL です');
+  let watcher;
+  try { watcher = new W.PublicKey(watcherStr); } catch { throw new Error('監視役アドレスが不正です（Base58 の Solana アドレス）'); }
+  if (watcher.equals(state.pubkey)) throw new Error('監視役に自分自身は指定できません。仲間のアドレスを入れてください');
+  if (state.balance != null && amount + 0.00001 > state.balance) throw new Error(`残高不足です（残高 ${solStr(state.balance)} SOL）。Airdrop を利用してください`);
+  if (!(state.durationMs >= 10000)) throw new Error('制限時間を選択してください');
+  return { title, amount, watcher, mode, steps };
+}
+
+async function startPact() {
+  if (state.busy) return;
+  if (!W) return toast('web3.js が読み込まれていません', 'error');
+  if (!state.pubkey) { toast('先にウォレットを接続してください', 'error'); return connectWallet(false); }
+  if (state.active) return toast('進行中の契約があります。まずはそれを片付けましょう', 'error');
+  // 起動時に全 RPC が落ちていた場合に備え、未確認なら再チェック
+  if (!state.networkOk && !(await checkNetwork())) return toast('📡 Devnet RPC に接続できません。どの公開 RPC も応答しませんでした。少し待ってから再試行してください', 'error', 8000);
+
+  let f;
+  try { await refreshBalance(); f = readForm(); } catch (e) { return toast(e.message, 'error'); }
+
+  state.busy = true; $('startBtn').disabled = true; $('startBtn').textContent = '⏳ 契約処理中…';
+  try {
+    // 前回の未完了の入金（金庫鍵を含む）が残っていれば先に片付ける。上書きして鍵を失わないため
+    const stale = store.get(LS_ACTIVE, null);
+    if (stale?.status === 'depositing') {
+      toast('前回の未完了の送金を確認しています…');
+      await recoverDepositing(stale);
+      if (store.get(LS_ACTIVE, null)) return toast('前回の送金の確認がまだ終わっていません。少し待ってから再度お試しください', 'error', 7000);
+    }
+
+    const escrowKp = f.mode === 'escrow' ? W.Keypair.generate() : null;
+    const pact = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title: f.title, amount: f.amount, watcher: f.watcher.toBase58(), owner: state.pubkey.toBase58(),
+      mode: f.mode, durationMs: state.durationMs,
+      steps: f.steps.map(t => ({ t, done: false })),
+      escrowSecret: escrowKp ? Array.from(escrowKp.secretKey) : null,
+      escrowAddr: escrowKp ? escrowKp.publicKey.toBase58() : null,
+      status: 'depositing', createdAt: Date.now(),
+    };
+    // 金庫鍵を失わないよう、送金前に保存しておく
+    store.set(LS_ACTIVE, pact);
+
+    try {
+      const dest = escrowKp ? escrowKp.publicKey : f.watcher;
+      const lamports = Math.round(f.amount * LAMPORTS);
+      // 署名のたびに新しい Tx を作り、送金直前に取得した最新 blockhash を設定する（submitTx 内）
+      const r = await submitTx(() => new W.Transaction().add(transferIx(state.pubkey, dest, lamports)), {
+        feePayer: state.pubkey,
+        wallet: true,
+        maxRounds: TX_CFG.WALLET_SIGN_ROUNDS,
+        ctx: { balance: state.balance, need: f.amount + FEE_LAMPORTS / LAMPORTS },
+        sign: (t) => state.provider.signTransaction(t),
+        title: `デポジット送金 ${solStr(f.amount)} SOL → ${escrowKp ? '契約金庫' : '監視役'}`,
+        // 送信前に署名(Tx ID)を保存 → リロードされても着金確認ができる
+        onSigned: (sig, lvbh) => { pact.depositSig = sig; pact.depositLvbh = lvbh; store.set(LS_ACTIVE, pact); },
+      });
+      beginCountdown(pact, r);
+    } catch (e) {
+      if (e.sig && !e.definitive) {
+        // 署名・送信済みで結果だけ不明 → 取り込まれている前提でカウントダウンを始め、裏で確認を続ける
+        beginCountdown(pact, { sig: e.sig, level: 'pending', lastValidBlockHeight: e.lastValidBlockHeight });
+      } else {
+        // 具体的な失敗理由（残高不足・期限切れ・RPC応答なし等）はトランザクションパネルにも詳細表示
+        const info = e.info || explainTxError(e, { balance: state.balance });
+        toast(`<b>${info.icon} 契約不成立: ${esc(info.title)}</b><br>${esc(info.reason)}<br><span style="color:#ffd28a">${esc(info.hint)}</span>`, 'error', 12000);
+        $('txPanel').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await recoverDepositing(pact);
+      }
+    }
+  } finally {
+    state.busy = false; $('startBtn').disabled = false; $('startBtn').textContent = '🔥 SOLを賭けて契約開始';
+  }
+}
+
+function beginCountdown(pact, r) {
+  pact.depositSig = r.sig;
+  pact.depositStatus = r.level;                       // finalized | confirmed | pending
+  pact.depositLvbh = r.lastValidBlockHeight ?? pact.depositLvbh ?? null;
+  pact.startAt = Date.now();
+  pact.deadline = pact.startAt + pact.durationMs;
+  pact.status = 'active';
+  store.set(LS_ACTIVE, pact);
+  state.active = pact;
+  enterArena();
+  refreshBalance();
+  if (r.level === 'pending') {
+    toast('送金は送信済みです。確定の確認を続けながらカウントダウンを開始しました。', 'info', 8000);
+    verifyDeposit(pact);
+  } else {
+    toast('契約成立。カウントダウン開始！', 'success');
+  }
+}
+
+/* 送信済み・未確認の入金をバックグラウンドで確認し、結果に応じて確定 or 契約取り消し */
+const verifying = new Set();
+async function verifyDeposit(pact) {
+  if (verifying.has(pact.id)) return;
+  verifying.add(pact.id);
+  try {
+    const until = Date.now() + TX_CFG.BG_VERIFY_TIMEOUT_MS;
+    let lvl = 'unknown';
+    while (lvl === 'unknown' && Date.now() < until) {
+      lvl = await pollSignature(pact.depositSig, { target: 'confirmed', timeoutMs: 30000, lastValidBlockHeight: pact.depositLvbh });
+      if (lvl === 'unknown' && pact.escrowAddr) {   // 金庫方式なら金庫残高でも着金を判定できる
+        const bal = await rpcPool.call('金庫残高取得', (c) => c.getBalance(new W.PublicKey(pact.escrowAddr), 'confirmed')).catch(() => 0);
+        if (bal >= Math.round(pact.amount * LAMPORTS)) lvl = 'confirmed';
+      }
+    }
+    if (lvl !== 'unknown') { markDeposit(pact, lvl); toast('入金の確定を確認しました ✅', 'success'); }
+    else toast(`入金の確定をまだ確認できません。<a href="${txUrl(pact.depositSig)}" target="_blank" rel="noopener">Explorer</a> で確認してください。`, 'error', 10000);
+  } catch (e) {
+    if (e.definitive) await cancelUnconfirmedPact(pact, e);
+  } finally {
+    verifying.delete(pact.id);
+  }
+}
+function markDeposit(pact, lvl) {
+  pact.depositStatus = lvl;
+  if (state.active?.id === pact.id) { state.active.depositStatus = lvl; store.set(LS_ACTIVE, state.active); renderDepositState(state.active); }
+  const h = getHistory().find(x => x.id === pact.id);
+  if (h && h.depositStatus === 'pending') { h.depositStatus = lvl; upsertHistory(h); }
+}
+/* 入金が取り込まれなかったと確定した契約を取り消す */
+async function cancelUnconfirmedPact(pact, err) {
+  const reason = err.expired ? '入金トランザクションがブロックに取り込まれませんでした' : '入金トランザクションが失敗しました';
+  let secretSafeToDrop = true;
+  if (pact.escrowSecret) {   // 念のため金庫に残高があれば本人へ返金してから鍵を破棄
+    try { const r = await drainEscrow(pact.escrowSecret, pact.owner, '未成立契約の返金'); secretSafeToDrop = r.level !== 'pending'; }
+    catch { secretSafeToDrop = false; }
+  }
+  if (state.active?.id === pact.id) {
+    state.active = null; store.del(LS_ACTIVE); exitArena(); document.title = 'SOL-PACT';
+  }
+  // 金庫の後始末が終わっていない場合は、鍵を失わないよう履歴に残して「再精算」で本人へ返金できるようにする
+  const h = getHistory().find(x => x.id === pact.id) || (secretSafeToDrop ? null : {
+    id: pact.id, date: Date.now(), title: pact.title, watcher: pact.watcher, owner: pact.owner, amount: pact.amount,
+    mode: pact.mode, durationMs: pact.durationMs, depositSig: pact.depositSig,
+    escrowAddr: pact.escrowAddr, escrowSecret: pact.escrowSecret, stepsDone: 0, stepsTotal: pact.steps?.length || 0,
+  });
+  if (h) {
+    h.depositStatus = 'voided';
+    if (secretSafeToDrop) { h.settled = true; delete h.escrowSecret; delete h.settleError; }
+    else { h.settled = false; h.result = 'success'; h.settleError = '金庫の返金が未完了'; } // success 扱い → 再精算で本人へ返金
+    upsertHistory(h); updateOpenModals(h);
+  }
+  toast(`⚠️ ${reason}。SOLは移動していないため、契約を取り消しました。`, 'error', 10000);
+}
+
+/* 入金処理中に中断された契約（リロード・送信エラー）の後始末 */
+async function recoverDepositing(pact) {
+  try {
+    let lvl = 'none';
+    if (pact.depositSig) {   // 送信済みの可能性あり → まず結果を確定させる
+      lvl = await pollSignature(pact.depositSig, {
+        target: 'confirmed', timeoutMs: TX_CFG.CONFIRM_TIMEOUT_MS, lastValidBlockHeight: pact.depositLvbh ?? null,
+      }).catch(e => { if (e.definitive) return 'none'; throw e; });
+    }
+    if (pact.mode === 'escrow' && pact.escrowSecret) {
+      const r = await drainEscrow(pact.escrowSecret, pact.owner, '未成立契約の返金');
+      if (r.sig) toast(`未成立だった契約の預かり金を返金しました <a href="${txUrl(r.sig)}" target="_blank" rel="noopener">Tx</a>`, 'success', 8000);
+      if (r.level === 'pending' || (lvl === 'unknown' && !r.sig)) return; // まだ判断できない → 鍵を残して次回再試行
+    } else if (lvl === 'confirmed' || lvl === 'finalized') {
+      toast(`中断された契約の送金は監視役に届いています。仲間に返金を依頼してください <a href="${txUrl(pact.depositSig)}" target="_blank" rel="noopener">Tx</a>`, 'error', 12000);
+    } else if (lvl === 'unknown') {
+      return;
+    }
+    store.del(LS_ACTIVE);
+  } catch {
+    toast('後始末に失敗しました。再読み込みすると再試行します。', 'error', 8000);
+  }
+}
+
+/* ---------- Arena ---------- */
+const DEPOSIT_LABEL = {
+  finalized: ['✅ 入金 Finalized（確定）', 'var(--sol2)'],
+  confirmed: ['✔ 入金 Confirmed（Finalized は未確認）', 'var(--sol2)'],
+  pending: ['⏳ 入金は送信済み・確定を確認中…（取り込まれなければ契約は自動で取り消されます）', 'var(--warn)'],
+};
+function renderDepositState(p) {
+  const [text, color] = DEPOSIT_LABEL[p.depositStatus] || DEPOSIT_LABEL.finalized;
+  $('depositState').textContent = text;
+  $('depositState').style.color = color;
+}
+function enterArena() {
+  const p = state.active;
+  $('arenaIdle').style.display = 'none';
+  $('arenaLive').style.display = '';
+  $('arenaTag').textContent = 'LIVE';
+  $('mTitle').textContent = p.title;
+  $('mStake').textContent = `${solStr(p.amount)} SOL`;
+  $('mWatcher').textContent = short(p.watcher);
+  $('depositLink').href = txUrl(p.depositSig);
+  renderDepositState(p);
+  renderChecklist();
+  $('completeBtn').disabled = false;
+  state.lastBeepSec = null;
+  clearInterval(state.timerId);
+  state.timerId = setInterval(tick, 50);
+  tick();
+  $('arena').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function exitArena() {
+  clearInterval(state.timerId); state.timerId = null;
+  document.body.classList.remove('warning', 'critical');
+  $('arenaIdle').style.display = '';
+  $('arenaLive').style.display = 'none';
+  $('arenaTag').textContent = 'STANDBY';
+}
+function renderChecklist() {
+  const p = state.active, ul = $('checklist');
+  ul.innerHTML = '';
+  p.steps.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.className = s.done ? 'done' : '';
+    li.innerHTML = `<span class="box">${s.done ? '✓' : ''}</span><span>${esc(s.t)}</span>`;
+    li.onclick = () => {
+      if (p.status !== 'active') return;
+      s.done = !s.done; store.set(LS_ACTIVE, p); renderChecklist();
+      if (s.done) beep(880, 0.06, 'triangle');
+    };
+    ul.appendChild(li);
+  });
+}
+
+const CIRC = 2 * Math.PI * 52;
+function tick() {
+  const p = state.active;
+  if (!p || p.status !== 'active') return;
+  const now = Date.now();
+  const remain = p.deadline - now;
+  if (remain <= 0) { $('timer').textContent = '00:00.00'; return failPact(); }
+
+  $('timer').textContent = fmtClock(remain, remain < 3600000);
+  $('ring').style.strokeDashoffset = String(CIRC * (1 - remain / p.durationMs));
+  const critTh = Math.min(Math.max(p.durationMs * 0.2, 10000), 300000);
+  const warnTh = Math.min(Math.max(p.durationMs * 0.5, 15000), 1800000);
+  const crit = remain <= critTh, warn = !crit && remain <= warnTh;
+  document.body.classList.toggle('critical', crit);
+  document.body.classList.toggle('warning', warn);
+  const doneN = p.steps.filter(s => s.done).length;
+  $('statusLine').textContent = crit ? `⚠ DANGER ─ 残り${fmtDur(Math.ceil(remain / 1000) * 1000)}！ ${solStr(p.amount)} SOL が消えるぞ！`
+    : warn ? `⏳ 折り返し地点を通過。ステップ ${doneN}/${p.steps.length} 完了`
+    : `🎯 集中モード。ステップ ${doneN}/${p.steps.length} 完了`;
+  $('timerSub').textContent = crit ? 'DANGER' : 'REMAINING';
+  document.title = `${crit ? '🚨' : '⏱'} ${fmtClock(remain, false)} | SOL-PACT`;
+
+  // 残り10秒はカウント音
+  const sec = Math.ceil(remain / 1000);
+  if (sec <= 10 && sec !== state.lastBeepSec) { state.lastBeepSec = sec; beep(sec <= 3 ? 1200 : 760, 0.08, 'square'); }
+}
+
+function rankFor(remainRatio, stepsDone, stepsTotal) {
+  let r;
+  if (remainRatio >= 0.75) r = '⚡ 電光石火の覇者';
+  else if (remainRatio >= 0.5) r = '🔥 集中の鬼';
+  else if (remainRatio >= 0.25) r = '🛡 背水の勝者';
+  else if (remainRatio >= 0.1) r = '⏳ ギリギリの生還者';
+  else r = '💀→🏆 奇跡のラストセーブ';
+  if (stepsTotal && stepsDone === stepsTotal) r += '（全ステップ制覇）';
+  return r;
+}
+
+function endedEntry(p, extra) {
+  return {
+    id: p.id, title: p.title, watcher: p.watcher, owner: p.owner, amount: p.amount, mode: p.mode,
+    durationMs: p.durationMs, stepsDone: p.steps.filter(s => s.done).length, stepsTotal: p.steps.length,
+    depositSig: p.depositSig, depositStatus: p.depositStatus || 'finalized', depositLvbh: p.depositLvbh ?? null,
+    settleSig: null, escrowAddr: p.escrowAddr, escrowSecret: p.escrowSecret,
+    settled: p.mode !== 'escrow',
+    ...extra,
+  };
+}
+
+async function completePact() {
+  const p = state.active;
+  if (!p || p.status !== 'active') return;
+  const now = Date.now();
+  if (now >= p.deadline) return failPact();
+  p.status = 'ended';
+  clearInterval(state.timerId);
+  $('completeBtn').disabled = true;
+
+  const doneN = p.steps.filter(s => s.done).length;
+  const entry = endedEntry(p, {
+    date: now, elapsedMs: now - p.startAt, result: 'success',
+    rank: rankFor((p.deadline - now) / p.durationMs, doneN, p.steps.length),
+  });
+  upsertHistory(entry);
+  store.del(LS_ACTIVE); state.active = null;
+  exitArena(); document.title = 'SOL-PACT';
+  showVictory(entry); confetti(); fanfare();
+  if (!entry.settled) await settleEntry(entry);
+}
+
+async function failPact() {
+  const p = state.active;
+  if (!p || p.status !== 'active') return;
+  p.status = 'ended';
+  clearInterval(state.timerId);
+  const entry = endedEntry(p, { date: p.deadline, elapsedMs: null, result: 'failed', rank: null });
+  upsertHistory(entry);
+  store.del(LS_ACTIVE); state.active = null;
+  exitArena(); document.title = 'SOL-PACT';
+  showDefeat(entry); doom();
+  if (!entry.settled) await settleEntry(entry);
+}
+
+/* 金庫の精算: 達成→本人へ返金 / 失敗→監視役へ没収送金 */
+const settling = new Set();   // 二重精算防止
+async function settleEntry(entry) {
+  if (entry.settled || !entry.escrowSecret || settling.has(entry.id)) return;
+  settling.add(entry.id);
+  const isWin = entry.result === 'success';
+  try {
+    // 1) 入金が未確認なら、精算前に着金を確かめる（未着金を「金庫が空」と誤判定して鍵を捨てないため）
+    if (entry.depositStatus === 'pending') {
+      let lvl;
+      try {
+        lvl = await pollSignature(entry.depositSig, { target: 'confirmed', timeoutMs: 60000, lastValidBlockHeight: entry.depositLvbh });
+      } catch (e) {
+        if (!e.definitive) throw e;
+        settling.delete(entry.id);
+        return cancelUnconfirmedPact(entry, e);
+      }
+      if (lvl === 'unknown') {
+        const bal = await rpcPool.call('金庫残高取得', (c) => c.getBalance(new W.PublicKey(entry.escrowAddr), 'confirmed'));
+        if (bal < Math.round(entry.amount * LAMPORTS)) throw new Error('入金の着金をまだ確認できません。しばらくしてから再精算してください');
+        lvl = 'confirmed';
+      }
+      entry.depositStatus = lvl;
+    }
+    // 2) 前回送った精算Txが確認待ちなら、まずその結果を確かめる（二重送金防止）
+    if (entry.settleSig && entry.settlePending) {
+      const lvl = await pollSignature(entry.settleSig, { target: 'confirmed', timeoutMs: 60000, lastValidBlockHeight: entry.settleLvbh ?? null })
+        .catch(e => { if (e.definitive) return 'dropped'; throw e; });
+      if (lvl === 'confirmed' || lvl === 'finalized') return finishSettle(entry, entry.settleSig, lvl);
+      if (lvl === 'unknown') throw new Error('前回の精算Txの結果を確認中です。しばらくしてから再精算してください');
+      // dropped → 取り込まれなかったので送り直す
+    }
+    // 3) 精算Tx送信
+    const r = await drainEscrow(entry.escrowSecret, isWin ? entry.owner : entry.watcher,
+      isWin ? '達成！デポジット返金（金庫 → あなた）' : '没収執行（金庫 → 監視役）');
+    if (r.level === 'pending') {
+      entry.settleSig = r.sig; entry.settlePending = true; entry.settleLvbh = r.lastValidBlockHeight;
+      throw new Error('精算Txは送信済みですが確定を確認できていません。「再精算」で状態を再確認します');
+    }
+    finishSettle(entry, r.sig, r.level);
+  } catch (e) {
+    entry.settleError = e?.info ? `${e.info.icon} ${e.info.title}: ${e.info.reason}` : (e?.message || String(e));
+    upsertHistory(entry);
+    updateOpenModals(entry);
+    toast(`精算が完了していません: ${esc(entry.settleError)}<br>履歴の「再精算」から再試行できます。`, 'error', 8000);
+  } finally {
+    settling.delete(entry.id);
+  }
+}
+function finishSettle(entry, sig, level) {
+  if (sig) { entry.settleSig = sig; entry.settleLevel = level; }
+  entry.settled = true;
+  delete entry.settlePending; delete entry.escrowSecret; delete entry.settleError;
+  upsertHistory(entry);
+  refreshBalance();
+  updateOpenModals(entry);
+  if (sig) toast(entry.result === 'success' ? 'デポジットが返金されました 💰' : '没収が執行されました 💸', entry.result === 'success' ? 'success' : 'error');
+}
+
+/* ---------- Modals ---------- */
+let modalEntryId = null;
+function sigLink(sig, label) {
+  return sig ? `<a href="${txUrl(sig)}" target="_blank" rel="noopener"><code>${short(sig, 10)}</code></a>${label ? ` <span style="color:var(--muted)">${label}</span>` : ''}` : '';
+}
+function settleCell(entry) {
+  if (entry.mode === 'direct') return entry.result === 'success'
+    ? '<span style="color:var(--muted)">直接送金方式のため、仲間から手動で返金してもらいましょう</span>'
+    : '<span style="color:var(--muted)">契約時に監視役へ送金済み</span>';
+  if (entry.depositStatus === 'voided' && entry.settled) return '<span style="color:var(--muted)">入金が取り込まれなかったため契約不成立（SOLは移動していません）</span>';
+  if (entry.settleSig && entry.settled) return sigLink(entry.settleSig, `(${entry.settleLevel === 'confirmed' ? 'Confirmed' : 'Finalized'})`);
+  if (entry.settleSig && entry.settlePending) return sigLink(entry.settleSig, '(確定確認中)');
+  if (entry.settled) return '<span style="color:var(--muted)">精算済み</span>';
+  if (entry.settleError) return '<span style="color:var(--danger)">失敗 ─ 履歴から再精算できます</span>';
+  return '<span class="dots">オンチェーン精算中</span>';
+}
+function showVictory(e) {
+  modalEntryId = e.id;
+  $('certBody').innerHTML = `
+    <div class="ttl">── CERTIFICATE OF ACHIEVEMENT ──</div>
+    <dl>
+      <dt>称号</dt><dd class="rank">${esc(e.rank)}</dd>
+      <dt>課題</dt><dd>${esc(e.title)}</dd>
+      <dt>達成タイム</dt><dd><b style="font-family:var(--mono)">${fmtClock(e.elapsedMs)}</b> / 制限 ${fmtDur(e.durationMs)}</dd>
+      <dt>ステップ</dt><dd>${e.stepsDone}/${e.stepsTotal} 完了</dd>
+      <dt>賭け金</dt><dd>${solStr(e.amount)} SOL（Devnet）</dd>
+      <dt>監視役</dt><dd><a href="${addrUrl(e.watcher)}" target="_blank" rel="noopener">${short(e.watcher, 6)}</a></dd>
+      <dt>デポジットTx</dt><dd>${sigLink(e.depositSig)}</dd>
+      <dt>返金Tx</dt><dd id="certSettle">${settleCell(e)}</dd>
+      <dt>達成日時</dt><dd>${fmtDate(e.date)}</dd>
+    </dl>`;
+  $('victoryOverlay').classList.add('show');
+}
+function showDefeat(e) {
+  modalEntryId = e.id;
+  $('defeatBody').innerHTML = `
+    <dl>
+      <dt>課題</dt><dd>${esc(e.title)}</dd>
+      <dt>没収額</dt><dd><b style="color:var(--danger)">-${solStr(e.amount)} SOL</b></dd>
+      <dt>受取人（仲間）</dt><dd><a href="${addrUrl(e.watcher)}" target="_blank" rel="noopener">${short(e.watcher, 6)}</a></dd>
+      <dt>ステップ</dt><dd>${e.stepsDone}/${e.stepsTotal} で力尽きた…</dd>
+      <dt>デポジットTx</dt><dd>${sigLink(e.depositSig)}</dd>
+      <dt>没収Tx</dt><dd id="defeatSettle">${settleCell(e)}</dd>
+    </dl>`;
+  $('defeatOverlay').classList.add('show');
+}
+function updateOpenModals(e) {
+  if (modalEntryId !== e.id) return;
+  const a = $('certSettle'), b = $('defeatSettle');
+  if (a) a.innerHTML = settleCell(e);
+  if (b) b.innerHTML = settleCell(e);
+}
+document.querySelectorAll('.overlay').forEach(o => {
+  o.addEventListener('click', (ev) => { if (ev.target === o || ev.target.hasAttribute('data-close')) o.classList.remove('show'); });
+});
+$('copyCertBtn').onclick = async () => {
+  const e = getHistory().find(x => x.id === modalEntryId);
+  if (!e) return;
+  const txt = `🏆 SOL-PACT 達成証明書\n称号: ${e.rank}\n課題: ${e.title}\n達成タイム: ${fmtClock(e.elapsedMs)} / 制限 ${fmtDur(e.durationMs)}\n賭け金: ${solStr(e.amount)} SOL (Devnet)\nデポジットTx: ${txUrl(e.depositSig)}${e.settleSig ? `\n返金Tx: ${txUrl(e.settleSig)}` : ''}`;
+  try { await navigator.clipboard.writeText(txt); toast('証明書をコピーしました', 'success'); } catch { toast('コピーできませんでした', 'error'); }
+};
+
+/* ---------- History ---------- */
+function renderHistory() {
+  const h = getHistory();
+  const valid = h.filter(x => x.depositStatus !== 'voided');   // 入金不成立の契約は統計から除外
+  const ok = valid.filter(x => x.result === 'success'), ng = valid.filter(x => x.result === 'failed');
+  const lost = ng.reduce((a, x) => a + x.amount, 0), saved = ok.reduce((a, x) => a + x.amount, 0);
+  const rate = valid.length ? Math.round(ok.length / valid.length * 100) : 0;
+  $('stats').innerHTML = [
+    ['契約数', valid.length], ['達成率', `${rate}%`], ['守ったSOL', solStr(saved)], ['没収されたSOL', solStr(lost)],
+  ].map(([k, v]) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+
+  const tb = $('histBody');
+  if (!h.length) { tb.innerHTML = `<tr><td colspan="7" class="empty">まだ履歴はありません。最初の契約で自分を追い込もう。</td></tr>`; return; }
+  tb.innerHTML = h.map(e => {
+    const success = e.result === 'success', voided = e.depositStatus === 'voided';
+    const settleLabel = voided ? '返金Tx' : success ? '返金Tx' : '没収Tx';
+    let links = `<a href="${txUrl(e.depositSig)}" target="_blank" rel="noopener">🔗 デポジットTx</a>`;
+    if (e.settleSig) links += `<a href="${txUrl(e.settleSig)}" target="_blank" rel="noopener">🔗 ${settleLabel}</a>`;
+    if (e.escrowAddr) links += `<a href="${addrUrl(e.escrowAddr)}" target="_blank" rel="noopener">🏦 金庫</a>`;
+    if (!e.settled && e.escrowSecret) links += `<button class="btn sm" data-retry="${esc(e.id)}">${e.settleError ? '🔁 再精算' : '⏳ 精算'}</button>`;
+    const detail = voided
+      ? `<span style="color:var(--muted)">入金が取り込まれず契約不成立</span>`
+      : success
+      ? `<b style="font-family:var(--mono)">${fmtClock(e.elapsedMs)}</b><br><span style="color:var(--gold)">${esc(e.rank)}</span> <button class="btn sm ghost" data-cert="${esc(e.id)}">証明書</button>`
+      : `<span style="color:var(--muted)">制限 ${fmtDur(e.durationMs)} 超過</span>`;
+    return `<tr>
+      <td>${fmtDate(e.date)}</td>
+      <td>${esc(e.title)}</td>
+      <td class="mono"><a href="${addrUrl(e.watcher)}" target="_blank" rel="noopener" title="${esc(e.watcher)}">${short(e.watcher, 5)}</a></td>
+      <td class="mono">${solStr(e.amount)}</td>
+      <td>${voided ? '<span class="badge" style="border:1px solid var(--line);color:var(--muted)">⚪ 不成立</span>' : success ? '<span class="badge ok">🏆 達成</span>' : '<span class="badge ng">💸 没収（Failed）</span>'}</td>
+      <td>${detail}</td>
+      <td class="links">${links}</td>
+    </tr>`;
+  }).join('');
+}
+$('histBody').addEventListener('click', (ev) => {
+  const c = ev.target.closest('[data-cert]'), r = ev.target.closest('[data-retry]');
+  if (c) { const e = getHistory().find(x => x.id === c.dataset.cert); if (e) showVictory(e); }
+  if (r) { const e = getHistory().find(x => x.id === r.dataset.retry); if (e) { r.disabled = true; settleEntry(e); } }
+});
+$('clearHistBtn').onclick = () => {
+  const pending = getHistory().filter(x => !x.settled && x.escrowSecret);
+  if (pending.length) return toast('未精算の契約があるため削除できません（金庫の鍵が失われます）', 'error');
+  if (confirm('ローカルの履歴表示をクリアしますか？（オンチェーンの記録は消えません）')) { saveHistory([]); renderHistory(); }
+};
+
+/* =========================================================
+   Effects: confetti & sound
+   ========================================================= */
+function confetti() {
+  const cv = $('confetti'), ctx = cv.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; ctx.scale(dpr, dpr);
+  const colors = ['#14F195', '#9945FF', '#ffd54a', '#ff5ec4', '#4fc3ff', '#ffffff'];
+  const mk = (x, y, vx, vy) => ({ x, y, vx, vy, w: 6 + Math.random() * 6, h: 9 + Math.random() * 9,
+    r: Math.random() * 6, vr: (Math.random() - .5) * .35, c: colors[Math.random() * colors.length | 0], t: Math.random() * 6 });
+  const parts = [];
+  for (let i = 0; i < 160; i++) parts.push(mk(innerWidth / 2, innerHeight * .35, (Math.random() - .5) * 18, -Math.random() * 15 - 4));
+  for (let i = 0; i < 90; i++) parts.push(mk(0, innerHeight, Math.random() * 14 + 4, -Math.random() * 18 - 8));
+  for (let i = 0; i < 90; i++) parts.push(mk(innerWidth, innerHeight, -Math.random() * 14 - 4, -Math.random() * 18 - 8));
+  const start = performance.now();
+  (function frame(now) {
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    for (const p of parts) {
+      p.vy += 0.32; p.vx *= 0.985; p.vy *= 0.99; p.x += p.vx; p.y += p.vy; p.r += p.vr; p.t += 0.1;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.scale(1, Math.cos(p.t));
+      ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
+    }
+    if (now - start < 5500) requestAnimationFrame(frame); else ctx.clearRect(0, 0, innerWidth, innerHeight);
+  })(start);
+}
+let actx = null;
+function beep(freq, dur = 0.1, type = 'sine', vol = 0.06, delay = 0) {
+  if (!state.sound) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq;
+    const t = actx.currentTime + delay;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + dur + 0.02);
+  } catch {}
+}
+const fanfare = () => [523, 659, 784, 1047, 784, 1047].forEach((f, i) => beep(f, i === 5 ? 0.6 : 0.14, 'triangle', 0.08, i * 0.13));
+const doom = () => [220, 196, 174, 110].forEach((f, i) => beep(f, i === 3 ? 0.9 : 0.3, 'sawtooth', 0.07, i * 0.28));
+
+/* =========================================================
+   Init
+   ========================================================= */
+function renderModeNote() {
+  $('modeNote').innerHTML = $('pactMode').value === 'escrow'
+    ? '🏦 <b>契約金庫方式</b>: このブラウザで生成した使い捨て金庫アドレスへ送金。達成ならあなたへ自動返金、TIME UP なら監視役へ自動で没収送金されます（各Txはすべて Explorer で確認可）。'
+    : '🤝 <b>直接送金方式</b>: 契約開始時に監視役へ直接送金します。達成時の返金は仲間との約束ベース（オンチェーンでは自動返金されません）。';
+}
+
+function init() {
+  const pref = store.get(LS_PREF, {});
+  if (pref.watcher) $('pactWatcher').value = pref.watcher;
+  if (pref.sound === false) state.sound = false;
+  $('soundBtn').textContent = state.sound ? '🔊 効果音: ON' : '🔇 効果音: OFF';
+  $('pactWatcher').addEventListener('change', () => store.set(LS_PREF, { ...store.get(LS_PREF, {}), watcher: $('pactWatcher').value.trim() }));
+  $('soundBtn').onclick = () => {
+    state.sound = !state.sound;
+    $('soundBtn').textContent = state.sound ? '🔊 効果音: ON' : '🔇 効果音: OFF';
+    store.set(LS_PREF, { ...store.get(LS_PREF, {}), sound: state.sound });
+  };
+
+  $('connectBtn').onclick = toggleWallet;
+  $('refreshBtn').onclick = refreshBalance;
+  $('airdropBtn').onclick = airdrop;
+  $('aiBtn').onclick = runAI;
+  $('aiInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) runAI(); });
+  $('exampleChips').addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON') { $('aiInput').value = e.target.textContent; runAI(); } });
+  $('startBtn').onclick = startPact;
+  $('completeBtn').onclick = completePact;
+  $('pactMode').onchange = renderModeNote; renderModeNote();
+  $('presets').addEventListener('click', (e) => {
+    const b = e.target.closest('.preset'); if (!b) return;
+    $('customMin').value = '';
+    setDuration(+b.dataset.ms, b);
+  });
+  $('customMin').addEventListener('input', () => {
+    const m = parseFloat($('customMin').value);
+    if (m > 0) setDuration(Math.round(Math.min(m, 10080) * 60000), null);
+  });
+
+  renderHistory();
+  if (!W) { checkNetwork(); return; }
+  rpcPool.init();
+  $('customRpc').value = pref.customRpc || '';
+  $('customRpcBtn').onclick = saveCustomRpc;
+  setInterval(renderRpcStatus, 5000);   // 「後回し中 Ns」の表示更新
+  checkNetwork();
+  // ウォレット注入を少し待ってから信頼済みなら自動接続
+  setTimeout(() => connectWallet(true), 400);
+  setInterval(refreshBalance, 20000);
+
+  // 進行中の契約を復元（リロード対策）
+  const saved = store.get(LS_ACTIVE, null);
+  if (saved?.status === 'active') {
+    state.active = saved;
+    if (Date.now() >= saved.deadline) { toast('ページを閉じている間に制限時間が過ぎていました…', 'error'); failPact(); }
+    else {
+      enterArena(); toast('進行中の契約を復元しました。逃げられません。');
+      if (saved.depositStatus === 'pending') verifyDeposit(saved);   // 入金確認の途中だった場合は再開
+    }
+  } else if (saved?.status === 'depositing') {
+    recoverDepositing(saved);
+  }
+  // 未精算の履歴を自動で再試行
+  (async () => {
+    for (const e of getHistory().filter(x => !x.settled && x.escrowSecret)) await settleEntry(e);
+  })();
+}
+init();
+</script>
+</body>
+</html>
